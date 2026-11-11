@@ -136,8 +136,17 @@ impl TextEdit {
 
         // Compute display blocks per `\n`-separated line of `display().0`, and add `mono: true`
         // spans for any `Block::Code` lines.
-        let (disp_text, _) = self.display();
-        let display_blocks = self.display_blocks(&disp_text);
+        let owned;
+        let disp_text: &str = if self.preedit().is_some() {
+            owned = self.display().0;
+            &owned
+        } else {
+            &self.text
+        };
+        let display_blocks = self.display_blocks(disp_text);
+        if !display_blocks.contains(&Block::Code) {
+            return (spans, strikes, links, display_blocks);
+        }
         let mut line_start = 0usize;
         let mut line_idx = 0usize;
         for (i, b) in disp_text.bytes().enumerate() {
