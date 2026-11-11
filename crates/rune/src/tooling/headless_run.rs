@@ -136,6 +136,9 @@ pub enum ScriptEvent {
     /// `{"type": "file-dialog", "path": …}`: the file chosen in the open file dialog, or None
     /// for `{"type": "file-dialog-cancel"}`.
     FileDialog(Option<std::path::PathBuf>),
+    /// `{"type": "file-dialog", "paths": […]}`: the files chosen in an open dialog that picks
+    /// several (`Tx::open_files`).
+    FileDialogPaths(Vec<std::path::PathBuf>),
     /// `{"drag_files": …}`: a file drag from another app moved over the window.
     DragFiles { paths: Vec<std::path::PathBuf>, at: ScriptPoint },
     /// `{"drop_files": …}`: files dropped on the window.
