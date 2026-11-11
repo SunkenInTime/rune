@@ -1,6 +1,7 @@
 //! Undo and redo for a [`TextEdit`]: document snapshots, typing runs coalesced as Chromium's
 //! editor does ([`Run`], [`step`]), undo groups and a history bounded in steps and bytes.
 
+use std::borrow::Cow;
 use std::collections::VecDeque;
 
 use super::*;
@@ -33,8 +34,8 @@ impl Snapshot {
 pub(super) enum Group {
     #[default]
     Closed,
-    /// Open on a field that records: the document as the group began.
-    Open(Snapshot),
+    /// Open on a field that records: the document as the group began, and the step's name.
+    Open(Snapshot, Option<StepName>),
     /// Open on a secure field, which records nothing.
     Unrecorded,
 }
@@ -71,6 +72,31 @@ impl PartialEq for EditedTag {
 pub(super) struct Change {
     before: Snapshot,
     after: Snapshot,
+    name: Option<StepName>,
+}
+
+/// What an undo step is called, for an Edit menu's "Undo Typing" ([`TextEdit::undo_name`]).
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum StepName {
+    /// Typed text, line breaks, deletions and input method commits, as AppKit names them.
+    Typing,
+    Paste,
+    Cut,
+    /// The app's name ([`TextEdit::undo_group_named`]).
+    Named(Arc<str>),
+}
+
+impl StepName {
+    /// The name in the app's language: Rune's own through [`crate::set_labels`].
+    fn text(&self) -> Cow<'_, str> {
+        use crate::labels::{Label, label};
+        match self {
+            StepName::Typing => Cow::Owned(label(Label::Typing)),
+            StepName::Paste => Cow::Owned(label(Label::Paste)),
+            StepName::Cut => Cow::Owned(label(Label::Cut)),
+            StepName::Named(name) => Cow::Borrowed(name),
+        }
+    }
 }
 
 impl Change {
@@ -122,6 +148,17 @@ pub(super) enum EditKind {
     Other,
 }
 
+impl EditKind {
+    /// The name of the step an edit of this kind starts: typing, line breaks and deletions are
+    /// "Typing", as in AppKit; the rest are named by whoever groups them.
+    fn name(self) -> Option<StepName> {
+        match self {
+            EditKind::Text | EditKind::LineBreak | EditKind::Delete | EditKind::DeleteRun => Some(StepName::Typing),
+            EditKind::Other => None,
+        }
+    }
+}
+
 /// Where an edit's change goes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Record {
@@ -158,9 +195,10 @@ impl TextEdit {
         }
     }
 
-    /// An undo group opened on the document as it is now.
+    /// An undo group opened on the document as it is now, keeping the open group's name.
     pub(super) fn group_from_here(&self) -> Group {
-        if self.secure { Group::Unrecorded } else { Group::Open(self.snapshot_now()) }
+        let name = match &self.group { Group::Open(_, name) => name.clone(), Group::Closed | Group::Unrecorded => None };
+        if self.secure { Group::Unrecorded } else { Group::Open(self.snapshot_now(), name) }
     }
 
     /// Edits record undo steps: not on a secure field, and not inside an undo group, whose
@@ -203,6 +241,10 @@ impl TextEdit {
     }
 
     pub(super) fn record_change(&mut self, before: Option<Snapshot>, kind: EditKind) {
+        self.record_step(before, kind, kind.name());
+    }
+
+    fn record_step(&mut self, before: Option<Snapshot>, kind: EditKind, name: Option<StepName>) {
         let Some(before) = before.filter(|_| self.recording()) else {
             return;
         };
@@ -228,7 +270,7 @@ impl TextEdit {
             last.after = after;
             h.bytes += last.bytes();
         } else {
-            let change = Change { before, after };
+            let change = Change { before, after, name };
             h.bytes += change.bytes();
             h.undo.push_back(change);
         }
@@ -257,12 +299,55 @@ impl TextEdit {
     /// assert_eq!(e.text, "hi @ag");
     /// ```
     pub fn undo_group<R>(&mut self, f: impl FnOnce(&mut TextEdit) -> R) -> R {
+        self.named_group(None, f)
+    }
+
+    /// [`undo_group`](Self::undo_group) whose step is called `name`, which
+    /// [`undo_name`](Self::undo_name) and [`redo_name`](Self::redo_name) return for an Edit
+    /// menu's "Undo Bold". Inside another group it names that group, unless that group already
+    /// has a name.
+    ///
+    /// ```
+    /// # use rune::{Mark, TextEdit};
+    /// let mut e = TextEdit::new("bold").rich();
+    /// e.set_selection(0, 4);
+    /// e.undo_group_named("Bold", |e| e.toggle_mark(Mark::Bold));
+    /// assert_eq!(e.undo_name().as_deref(), Some("Bold"));
+    /// ```
+    pub fn undo_group_named<R>(&mut self, name: impl Into<String>, f: impl FnOnce(&mut TextEdit) -> R) -> R {
+        let name: String = name.into();
+        self.named_group(Some(StepName::Named(name.into())), f)
+    }
+
+    /// Names the open [`undo_group`](Self::undo_group)'s step `name`, replacing any name it
+    /// had, as AppKit's `setActionName:` names the open undo group. Outside a group it does
+    /// nothing.
+    pub fn set_undo_name(&mut self, name: impl Into<String>) {
+        let name: String = name.into();
+        if let Group::Open(_, slot) = &mut self.group {
+            *slot = Some(StepName::Named(name.into()));
+        }
+    }
+
+    /// Runs `f` as one step called `name`, Rune's own (a paste, a cut): inside an app's group it
+    /// names that group only when the app gave it no name.
+    pub(super) fn named_step<R>(&mut self, name: StepName, f: impl FnOnce(&mut TextEdit) -> R) -> R {
+        self.named_group(Some(name), f)
+    }
+
+    fn named_group<R>(&mut self, name: Option<StepName>, f: impl FnOnce(&mut TextEdit) -> R) -> R {
         if self.group.is_open() {
+            if let Group::Open(_, slot @ None) = &mut self.group {
+                *slot = name;
+            }
             return f(self);
         }
         self.sync_invariants();
         self.break_history_group();
         self.group = self.group_from_here();
+        if let Group::Open(_, slot) = &mut self.group {
+            *slot = name;
+        }
         struct Reset<'a>(&'a mut TextEdit);
         impl Drop for Reset<'_> {
             fn drop(&mut self) {
@@ -271,15 +356,54 @@ impl TextEdit {
         }
         let g = Reset(self);
         let r = f(g.0);
-        let before = match std::mem::take(&mut g.0.group) {
-            Group::Open(baseline) => Some(baseline),
-            Group::Closed | Group::Unrecorded => None,
+        let (before, name) = match std::mem::take(&mut g.0.group) {
+            Group::Open(baseline, name) => (Some(baseline), name),
+            Group::Closed | Group::Unrecorded => (None, None),
         };
         drop(g);
         self.sync_invariants();
         self.break_history_group();
-        self.record_change(before, EditKind::Other);
+        self.record_step(before, EditKind::Other, name);
         r
+    }
+
+    /// The step [`undo`](Self::undo) would take back now, if there is one.
+    fn undoable(&self) -> Option<&Change> {
+        self.history.undo.back().filter(|c| self.recording() && self.text == c.after.text.as_str())
+    }
+
+    /// The step [`redo`](Self::redo) would make again now, if there is one.
+    fn redoable(&self) -> Option<&Change> {
+        self.history.redo.last().filter(|c| self.recording() && self.text == c.before.text.as_str())
+    }
+
+    /// Whether [`undo`](Self::undo) has a step to take back: false with nothing recorded, on a
+    /// secure field, inside an [`undo_group`](Self::undo_group), or once the app replaced
+    /// `text` under the history.
+    pub fn can_undo(&self) -> bool {
+        self.undoable().is_some()
+    }
+
+    /// Whether [`redo`](Self::redo) has a step to make again.
+    pub fn can_redo(&self) -> bool {
+        self.redoable().is_some()
+    }
+
+    /// The name of the step [`undo`](Self::undo) would take back, for an Edit menu's "Undo
+    /// Typing": "Typing" for typed text, line breaks, deletions and input method commits (one
+    /// step per typing run), "Paste" and "Cut" for those, and the app's name for an
+    /// [`undo_group_named`](Self::undo_group_named) step. Rune's names are its labels, so
+    /// [`crate::set_labels`] translates them (`Label::Typing`, `Label::Paste`, `Label::Cut`).
+    /// `None` when there's nothing to undo or the step has no name (formatting, a pill, an
+    /// unnamed group); [`can_undo`](Self::can_undo) tells those apart.
+    pub fn undo_name(&self) -> Option<Cow<'_, str>> {
+        self.undoable()?.name.as_ref().map(StepName::text)
+    }
+
+    /// The name of the step [`redo`](Self::redo) would make again, as
+    /// [`undo_name`](Self::undo_name).
+    pub fn redo_name(&self) -> Option<Cow<'_, str>> {
+        self.redoable()?.name.as_ref().map(StepName::text)
     }
 
     /// Undo one typing group or discrete edit. Active IME composition is cancelled first.
@@ -310,3 +434,7 @@ impl TextEdit {
 #[cfg(test)]
 #[path = "history_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "undo_names_tests.rs"]
+mod names_tests;

@@ -65,7 +65,7 @@ impl TextEdit {
         } else if let Group::Unrecorded = self.group {
             // A group opened while secure starts recording from here.
             self.sync_invariants();
-            self.group = Group::Open(self.snapshot_now());
+            self.group = Group::Open(self.snapshot_now(), None);
         }
     }
 
