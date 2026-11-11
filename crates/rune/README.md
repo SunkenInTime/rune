@@ -1324,6 +1324,15 @@ snapshots and retains at most 128 edits / 1 MiB of text (oversized edits drop hi
 Call `TextEdit::clear()` after submission to clear history while retaining focus;
 call `break_history_group()` when setting a selection from custom pointer handling.
 
+An Edit menu reads the step it would act on: `edit.undo_name()` and `redo_name()` return
+"Typing" for a run of typing (typed text, line breaks, deletions and input method commits, as
+AppKit names them), "Paste" and "Cut" for those, and the app's name for a step made with
+`edit.undo_group_named("Bold", |e| e.toggle_mark(Mark::Bold))`; `set_undo_name(name)` names the
+open group. They're `None` with nothing to undo or for a step without a name (formatting, a
+pill, an unnamed group), and `can_undo()` and `can_redo()` say whether there's a step. Rune's names
+are its labels (`Label::Typing`, `Label::Paste`, `Label::Cut`), so `rune::set_labels` translates
+them: build "Undo Typing" from them in the app's language.
+
 Option+Left/Right (Ctrl off macOS) move by word, Shift extends, and Option+Backspace/Delete
 delete a word. By default the stops are runs of white space, so punctuation travels with the word
 it touches. `TextEdit::new(text).word_motion(WordMotion::Unicode)` (or `set_word_motion`) stops

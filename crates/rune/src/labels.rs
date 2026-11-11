@@ -20,6 +20,9 @@ pub enum Label<'a> {
     SelectAll,
     Undo,
     Redo,
+    /// The undo step a run of typing makes, as an Edit menu's "Undo Typing" names it
+    /// (`TextEdit::undo_name`).
+    Typing,
     /// A misspelled word's item that adds the word to the user's dictionary.
     LearnSpelling,
     /// Shown, disabled, in place of the suggestions when the checker has none.
@@ -107,6 +110,7 @@ fn english(label: Label<'_>) -> String {
         Label::SelectAll => "Select All".into(),
         Label::Undo => "Undo".into(),
         Label::Redo => "Redo".into(),
+        Label::Typing => "Typing".into(),
         Label::LearnSpelling => "Learn Spelling".into(),
         Label::NoGuesses => "No Guesses Found".into(),
         Label::Spellcheck => "Spellcheck".into(),

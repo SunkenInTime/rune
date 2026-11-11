@@ -34,7 +34,7 @@ use typing::Typing;
 mod words;
 pub use words::WordMotion;
 pub(crate) use history::History;
-use history::{EditKind, EditedTag, Group};
+use history::{EditKind, EditedTag, Group, StepName};
 
 #[derive(Clone, Default, PartialEq)]
 pub struct TextEdit {

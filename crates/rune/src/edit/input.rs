@@ -269,7 +269,7 @@ impl TextEdit {
                 Some('c') if !self.secure => out.copy = Some(self.selected().to_owned()),
                 Some('x') if !self.secure => {
                     out.copy = Some(self.selected().to_owned());
-                    self.insert("");
+                    self.named_step(StepName::Cut, |e| e.insert(""));
                 }
                 _ => {}
             },
@@ -356,7 +356,7 @@ impl TextEdit {
                 ime::Effect::Commit(mut s) => {
                     let clean = self.sanitize(&s);
                     s.zeroize();
-                    self.insert(&clean);
+                    self.named_step(StepName::Typing, |e| e.insert(&clean));
                 }
             }
         }
@@ -366,7 +366,7 @@ impl TextEdit {
     pub fn paste(&mut self, s: &str) -> EditOutcome {
         self.normalize_hidden_selection();
         let s = self.sanitize(s);
-        self.insert(&s);
+        self.named_step(StepName::Paste, |e| e.insert(&s));
         EditOutcome::default()
     }
 
@@ -386,6 +386,10 @@ impl TextEdit {
     }
 
     fn paste_rich(&mut self, html_str: &str, plain: &str, pills: bool) -> EditOutcome {
+        self.named_step(StepName::Paste, |e| e.paste_rich_step(html_str, plain, pills))
+    }
+
+    fn paste_rich_step(&mut self, html_str: &str, plain: &str, pills: bool) -> EditOutcome {
         if self.secure || html_str.trim().is_empty() {
             return self.paste(plain);
         }
