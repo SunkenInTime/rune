@@ -120,16 +120,26 @@ pub fn quitting() -> bool {
     !matches!(state(), State::Running)
 }
 
-/// Hooks the system's quit requests into the loop: `send` delivers a quit (`true` when the
-/// session ends now and the windows must close) to `Windows`. Once per process, on the UI thread.
+/// Whether a window of this process asks before the user's Quit (`App::on_close_request`).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+static ASKS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// A window that hears close requests opened: from now on the user's macOS Quit asks the
+/// windows first (`ask` in `install`).
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-pub(crate) fn install(send: impl Fn(bool) -> bool + 'static) {
+pub(crate) fn asks_before_quit() { ASKS.store(true, std::sync::atomic::Ordering::Relaxed); }
+
+/// Hooks the system's quit requests into the loop: `send` delivers a quit (`true` when the
+/// session ends now and the windows must close) to `Windows`, and `ask` (macOS) the user's
+/// Quit for the windows to agree to first. Once per process, on the UI thread.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+pub(crate) fn install(send: impl Fn(bool) -> bool + 'static, ask: impl Fn() -> bool + 'static) {
     #[cfg(target_os = "windows")]
-    win32::install(send);
+    { let _ = ask; win32::install(send); }
     #[cfg(target_os = "macos")]
-    { let _ = send; mac::install(); }
+    { let _ = send; mac::install(ask); }
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let _ = send;
+    let _ = (send, ask);
 }
 
 /// Whether the event loop is inside one of its handlers, on the UI thread: a session message

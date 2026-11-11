@@ -114,6 +114,9 @@ pub(crate) enum WakeEvent {
     /// with `true` the session ends now and the windows close.
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     Quit(bool),
+    /// macOS: the user's Quit waits for every window's `App::on_close_request`.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    AskQuit,
     /// An assistive client asked something of a surface's accessibility tree (`crate::a11y`):
     /// the host answers at the end of the turn this wakes.
     #[cfg_attr(not(feature = "accessibility"), allow(dead_code))]
@@ -149,6 +152,8 @@ pub(crate) trait AnyHost {
     fn key(&self) -> Option<&str> { None }
     /// How reopening the app sees it; overlays never come back.
     fn reopen_candidate(&self) -> crate::platform::reopen::Candidate { Default::default() }
+    /// Runs `App::on_close_request` for the user's Quit; true when the quit may go ahead.
+    fn ask_close(&mut self, _event_loop: &ActiveEventLoop) -> bool { true }
     /// Runs `App::on_reopen` as an update; true when it handled the reopen.
     fn reopen_hook(&mut self, _event_loop: &ActiveEventLoop, _has_visible_windows: bool) -> bool { false }
     /// Applies what was asked of it through its handle since the last wake, now rather than
@@ -313,8 +318,8 @@ impl ApplicationHandler<WakeEvent> for Windows {
             let proxy = self.proxy.clone();
             crate::open_url::instance::on_relaunch(move || proxy.send_event(WakeEvent::Reopen).is_ok());
         }
-        let proxy = self.proxy.clone();
-        crate::quit::install(move |ending| proxy.send_event(WakeEvent::Quit(ending)).is_ok());
+        let (proxy, ask) = (self.proxy.clone(), self.proxy.clone());
+        crate::quit::install(move |ending| proxy.send_event(WakeEvent::Quit(ending)).is_ok(), move || ask.send_event(WakeEvent::AskQuit).is_ok());
         crate::open_url::incoming::settle();
         // A window opened at launch took it; a GPU kept for a later one would sit idle until then.
         crate::render::discard_prewarm();
@@ -336,6 +341,7 @@ impl ApplicationHandler<WakeEvent> for Windows {
                 self.cleanup(event_loop);
                 return;
             }
+            WakeEvent::AskQuit => { self.ask_quit(event_loop); self.cleanup(event_loop); return; }
             WakeEvent::Turn => { #[cfg(not(target_arch = "wasm32"))] self.turn(event_loop); return; }
         };
         if let Some(Some(host)) = self.hosts.get_mut(slot) {
@@ -495,7 +501,7 @@ impl<S: 'static> Host<S> {
         let present_log = args.trace.as_ref().map(|_| Arc::default());
         let mut app = app;
         let comp = app.compositor.take();
-        let (on_focus, on_ime, on_visibility) = (app.on_focus, app.on_ime, app.on_visibility);
+        let (on_focus, on_ime, on_visibility, on_close_request) = (app.on_focus, app.on_ime, app.on_visibility, app.on_close_request);
         let titlebar = app.titlebar.filter(|_| !options.borderless);
         let chrome = app.chrome;
         let (srgb_blend, font_smoothing) = (app.srgb_blend, app.font_smoothing);
@@ -525,6 +531,7 @@ impl<S: 'static> Host<S> {
         }
         rt.on_focus = on_focus;
         rt.on_visibility = on_visibility;
+        rt.on_close_request = on_close_request.inspect(|_| crate::quit::asks_before_quit());
         rt.app_ime.hook = on_ime;
         rt.set_modifier_keys(modifier_keys);
         rt.set_srgb_blend(srgb_blend); rt.set_font_smoothing(font_smoothing);

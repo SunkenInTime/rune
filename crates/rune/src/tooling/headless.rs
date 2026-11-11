@@ -72,7 +72,7 @@ pub(crate) fn headless_configured<S: 'static>(mut app: crate::app::App<S>, args:
     let mut comp = app.compositor.take();
     let (srgb_blend, font_smoothing) = (app.srgb_blend, app.font_smoothing);
     let (on_focus, on_ime, on_mods) = (app.on_focus, app.on_ime, app.on_mods);
-    let (on_reopen, on_open_url) = (app.on_reopen, app.on_open_url);
+    let (on_reopen, on_open_url, on_close_request) = (app.on_reopen, app.on_open_url, app.on_close_request);
     // A `--realtime` run stands in for a window, so it starts the app's live work as one does.
     let mut on_ready = app.on_ready.take().filter(|_| args.realtime);
     let mut reports = crate::frame::encoded::FrameReports::<S>::new(app.on_frame_encoded.take(), Some("main"));
@@ -111,6 +111,7 @@ pub(crate) fn headless_configured<S: 'static>(mut app: crate::app::App<S>, args:
     let chrome = rt.headless_chrome(chrome, titlebar, app_options.borderless);
     rt.on_focus = on_focus;
     rt.on_mods = on_mods;
+    rt.on_close_request = on_close_request;
     rt.app_ime.hook = on_ime;
     rt.transparent = transparent;
     rt.fit_height = fit_height;
@@ -264,6 +265,8 @@ pub(crate) fn headless_configured<S: 'static>(mut app: crate::app::App<S>, args:
                 Kind::Focus(focused) => rt.window_focus(*focused),
                 // The one window always shows here.
                 Kind::Reopen => if let Some(f) = on_reopen { rt.update(|s, tx| { f(s, true, tx); }); },
+                // The one window can't go: an allowed close is asked of it as `Tx::close_window`.
+                Kind::Close => if rt.request_close(crate::CloseRequest::Window) { rt.update(|_, tx| tx.close_window()); },
                 Kind::OpenUrl(url) => if let Some(f) = on_open_url { rt.update(|s, tx| f(s, url, tx)); },
                 Kind::Shortcut(shortcut) => shared.shortcuts.fire(shortcut).unwrap_or_else(|e| die(&format!("script shortcut: {e}"))),
                 Kind::Menu(item) => crate::native_menu::fire(&shared, item).unwrap_or_else(|e| die(&format!("script menu: {e}"))),

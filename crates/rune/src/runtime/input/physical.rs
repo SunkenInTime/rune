@@ -165,7 +165,8 @@ impl<S: 'static> Runtime<S> {
                     let unhandled = unhandled.filter(|u| !ran && (!repeat || matches!(u, Unhandled::Menu(_))));
                     let fell = unhandled.is_some();
                     match unhandled {
-                        Some(Unhandled::Close) => one.close_window(),
+                        // The user's ⌘W, as the close button: the app may refuse.
+                        Some(Unhandled::Close) => if self.request_close(crate::CloseRequest::Window) { one.close_window() },
                         Some(Unhandled::Minimize) => one.minimize(),
                         Some(Unhandled::Menu(run)) => run(),
                         Some(Unhandled::WindowMenu) => self.request_window_menu(),
