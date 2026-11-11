@@ -2405,6 +2405,16 @@ feature (`crate::a11y`, `runtime/a11y`).
   `active_descendant` (the highlighted row of a tree, table or suggestion list whose container
   or field keeps focus). An icon-only button needs `.label("Close")`. An `El::help` tooltip
   describes its element unless it repeats the name; `description("")` turns that off.
+- **Announcements**: `tx.announce("Saved")` has screen readers read a line without moving
+  focus or drawing anything, as a status flash. It is a polite live region: a label under the
+  root that AccessKit's adapters announce when it's added (VoiceOver's announcement
+  notification, UI Automation's `LiveRegionChanged`, AT-SPI's `object:announcement`, which
+  Orca reads). Each call adds a new node, so the same text twice is read twice, and it stays
+  until the next so a reader that fetches it after the event finds it. With no reader
+  listening it does nothing, and a reader that starts later doesn't hear old ones; the web and
+  builds without `accessibility` ignore it. The last one in a turn wins. `--tree` shows it as a
+  `live-polite` label, `--trace` records `announce`, and tests read `Runtime::announcement()`.
+  For a region the view draws (a status bar a reader can also find), use `live_region` instead.
 - **Actions** run the handlers a pointer or keyboard user reaches: click presses
   (`on_press`), focus focuses, increment and decrement step (`on_step`), set value and text
   selection edit through the field's editor (so `on_input_change` runs), set value on a slider

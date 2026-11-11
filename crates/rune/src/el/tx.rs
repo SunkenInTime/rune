@@ -107,6 +107,8 @@ pub struct Tx {
     pub(crate) clock: f64,
     /// `Tx::beep`.
     pub(crate) beep: bool,
+    /// `Tx::announce`: the last text asked for.
+    pub(crate) announce: Option<String>,
 }
 
 /// Which asked for focus: [`Tx::focus`], or [`Tx::return_focus`] handing it back.
