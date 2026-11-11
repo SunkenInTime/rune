@@ -404,7 +404,7 @@ pub struct Runtime<S: 'static> {
     /// `App::on_visibility`.
     pub(crate) on_visibility: Option<fn(&mut S, bool, &mut Tx)>,
     /// `App::on_close_request`.
-    pub(crate) on_close_request: Option<fn(&mut S, CloseRequest, &mut Tx) -> bool>,
+    pub on_close_request: Option<fn(&mut S, CloseRequest, &mut Tx) -> bool>,
     /// `App::on_ime` and the composition it has open.
     pub(crate) app_ime: app_ime::AppIme<S>,
     view: fn(&S, &mut Cx<S>) -> El,

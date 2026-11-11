@@ -96,7 +96,12 @@ impl<S: 'static> Runtime<S> {
         };
         let Some(focused) = self.focused_index().filter(|&i| menu_key && self.can_focus(i)) else { return false };
         if self.focused_link_menu(focused, tx) { return true; }
-        let [x, _, _, y] = self.drawn_box(focused);
+        let [mut x, _, _, mut y] = self.drawn_box(focused);
+        // A text field's menu opens under its caret, as AppKit's and Windows' do, not at the
+        // corner of a field that may fill the window.
+        if let Some([cx, cy, _, ch]) = self.caret_rect(&self.nodes, focused) {
+            (x, y) = (cx, cy + ch);
+        }
         let n = &self.nodes[focused];
         if n.handlers.on_secondary_press.is_none() && n.input.as_ref().is_some_and(|i| i.access.is_some()) {
             return self.field_menu(n.path.clone(), (x, y), None, tx);

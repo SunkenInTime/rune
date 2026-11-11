@@ -226,6 +226,11 @@ impl<S: 'static> Runtime<S> {
             let mut caret = None;
             // The selected display bytes and the ink their `El::selection_style` gives them.
             let mut selected_ink: Option<(usize, usize, [f32; 4])> = None;
+            // Line-height fills (`Span::line_bg`, `TextHighlight::line_bg`) are backgrounds: a
+            // field's selection draws over them, as AppKit draws it over `.backgroundColor`, so
+            // it waits until they are down.
+            let line_fills = spec.highlights.iter().any(|h| h.line) || spec.spans.iter().any(crate::text::Span::is_line_bg);
+            let mut field_selection: Option<(usize, usize, [f32; 4])> = None;
             if let Some(inp) = &n.input {
                 let e = &inp.edit;
                 let departing = self.flights.iter().any(|f| f.departs(&n.path, n.key.as_deref())
@@ -265,8 +270,10 @@ impl<S: 'static> Runtime<S> {
                     && e.preedit().is_none()
                 {
                     let (da, db) = e.display_selection_range(a, b);
-                    selectable::push_field_selection(&mut self.instances, layout, da, db,
-                        origin, tk, premul(highlight, o, srgb), s, clip, fade);
+                    if line_fills { field_selection = Some((da, db, premul(highlight, o, srgb))); } else {
+                        selectable::push_field_selection(&mut self.instances, layout, da, db,
+                            origin, tk, premul(highlight, o, srgb), s, clip, fade);
+                    }
                     selected_ink = ink.map(|c| (da, db, premul(c, o, srgb)));
                 }
                 if e.focused && !departing {
@@ -275,8 +282,10 @@ impl<S: 'static> Runtime<S> {
                         let (da, db) = e.display_selection_range(a, b);
                         // An inactive window paints a field's selection in its inactive pair, as a browser does.
                         let (highlight, ink) = inp.selection_style.map_or((inp.selection, None), |st| st.pick(self.window_focused != Some(false)));
-                        selectable::push_field_selection(&mut self.instances, layout, da, db,
-                            origin, tk, premul(highlight, o, srgb), s, clip, fade);
+                        if line_fills { field_selection = Some((da, db, premul(highlight, o, srgb))); } else {
+                            selectable::push_field_selection(&mut self.instances, layout, da, db,
+                                origin, tk, premul(highlight, o, srgb), s, clip, fade);
+                        }
                         selected_ink = ink.map(|c| (da, db, premul(c, o, srgb)));
                     }
                     // A range selection hides the caret, as a browser's field and a native one do.
@@ -359,7 +368,11 @@ impl<S: 'static> Runtime<S> {
                     d.rect[1] += glide[1];
                 }
             }
-            for d in &self.deco_scratch {
+            let line_decos = self.deco_scratch.iter().take_while(|d| d.line).count();
+            for (k, d) in self.deco_scratch.iter().enumerate() {
+                if k == line_decos && let Some((da, db, highlight)) = field_selection.take() {
+                    selectable::push_field_selection(&mut self.instances, layout, da, db, origin, tk, highlight, s, clip, fade);
+                }
                 let alpha = if d.ring.is_some() {
                     reveal.map_or(1.0, |st| Self::reveal_alpha(st, d.byte, self.scene.store().node_time(n.id)))
                 } else { 1.0 };
@@ -372,6 +385,9 @@ impl<S: 'static> Runtime<S> {
                     inst.params[3] = o * alpha;
                 }
                 self.instances.push(inst);
+            }
+            if let Some((da, db, highlight)) = field_selection.take() {
+                selectable::push_field_selection(&mut self.instances, layout, da, db, origin, tk, highlight, s, clip, fade);
             }
             let pill_fg = spec.pill_colors.and_then(|(_, fg)| fg).unwrap_or(color);
             for (icon, px, at, fg) in pill_icons {

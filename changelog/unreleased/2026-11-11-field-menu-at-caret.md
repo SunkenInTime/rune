@@ -1,0 +1,1 @@
+- Text fields: a context menu opened from the keyboard (Menu key, Shift+F10) opens under the caret instead of at the field's bottom-left corner, and a field's selection draws over `line_bg` fills instead of under them. `Runtime::on_close_request` is public, for tests.
