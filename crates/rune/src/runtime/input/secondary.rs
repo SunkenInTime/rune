@@ -57,7 +57,7 @@ impl<S: 'static> Runtime<S> {
             && self.secondary_target(x, y) == Some(path.as_str())
         {
             let i = self.nodes.iter().position(|n| n.path == path);
-            let point = i.map_or(PointerEvent { x, y, window_x: x, window_y: y }, |i| self.pointer_event(i, x, y));
+            let point = i.map_or(PointerEvent { x, y, window_x: x, window_y: y, text_offset: None }, |i| self.pointer_event(i, x, y));
             let link = i.and_then(|i| self.secondary_link_at(i, x, y));
             // Like a primary link press, it must end on the link it began on; one that moved
             // onto, off or between links opens nothing.

@@ -197,6 +197,11 @@ pub struct PointerEvent {
     pub y: f32,
     pub window_x: f32,
     pub window_y: f32,
+    /// On a [`text_input`](crate::text_input): the byte of `edit.text` the caret would land on
+    /// for a click at this point (the nearest position when the point is beside the text).
+    /// `None` on any other element. An editor inserts a dropped file here, or asks what was
+    /// right-clicked.
+    pub text_offset: Option<usize>,
 }
 
 impl PointerEvent {

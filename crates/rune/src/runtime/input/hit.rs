@@ -12,7 +12,16 @@ impl<S: 'static> Runtime<S> {
     /// Window point (x, y) as node `i`'s handlers see it.
     pub(super) fn pointer_event(&self, i: usize, x: f32, y: f32) -> PointerEvent {
         let [lx, ly] = self.to_local(i, x, y);
-        PointerEvent { x: lx, y: ly, window_x: x, window_y: y }
+        PointerEvent { x: lx, y: ly, window_x: x, window_y: y, text_offset: self.text_offset_at(i, lx, ly) }
+    }
+
+    /// The byte of node `i`'s edit a click at its own point (`lx`, `ly`) puts the caret on, when
+    /// it is a multi-line text field.
+    pub(super) fn text_offset_at(&self, i: usize, lx: f32, ly: f32) -> Option<usize> {
+        let n = self.nodes.get(i)?;
+        let (inp, layout) = (n.input.as_ref()?, n.text_layout.as_ref()?);
+        if inp.single_line { return None; }
+        Some(super::input_click::hit(&inp.edit, layout, lx - n.inset[0], ly - n.inset[1], self.env.scale, false).caret)
     }
 
     /// Window point (x, y) in node `i`'s own layout points: from its top-left as drawn, divided
