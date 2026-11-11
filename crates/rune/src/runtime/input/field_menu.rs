@@ -2,7 +2,8 @@
 //! browser's menu over an editable field: a misspelled word's suggestions and Learn Spelling,
 //! then Cut, Copy, Paste and, off macOS, Select All, then the app's Spellcheck setting
 //! (`El::on_spellcheck`) and, where there are dictionaries to choose, its Spellcheck Languages
-//! (`El::on_spellcheck_languages`). A field with its own `on_secondary_press` shows that instead.
+//! (`El::on_spellcheck_languages`). The app's own items (`El::input_menu`) come first. A field
+//! with its own `on_secondary_press` shows that instead.
 //! The items read the app's names for them (`rune::set_labels`) each time the menu opens.
 use super::input_click::hit;
 use super::*;
@@ -19,6 +20,8 @@ pub(crate) struct FieldMenu {
     toggle: Option<(bool, crate::el::WindowFocusFn)>,
     /// The dictionaries checking text when the menu opened, and what keeps a new choice.
     languages: Option<(Vec<String>, crate::el::LanguagesFn)>,
+    /// The app's items (`El::input_menu`), what picks them, and the text offset they're for.
+    app: Option<(PopupMenu, crate::el::InputMenu, usize)>,
 }
 
 impl<S: 'static> Runtime<S> {
@@ -35,15 +38,19 @@ impl<S: 'static> Runtime<S> {
         let s = self.env.scale;
         let toggle = std::iter::successors(Some(i), |&j| self.nodes[j].parent).find_map(|j| self.nodes[j].handlers.on_spellcheck.clone());
         let keep = std::iter::successors(Some(i), |&j| self.nodes[j].parent).find_map(|j| self.nodes[j].handlers.on_spellcheck_languages.clone());
+        let own = std::iter::successors(Some(i), |&j| self.nodes[j].parent).find_map(|j| self.nodes[j].handlers.input_menu.clone());
         if self.focus.path() != Some(path.as_str()) {
             self.set_focus(Some(path.clone()), false);
         }
         let e = access(states!(self));
         e.set_single_line(single);
+        // The offset the app's items are for: the click's, else the caret's.
+        let mut offset = if e.focus >= e.anchor { e.range().1 } else { e.range().0 };
         if let (Some((x, y)), Some(l)) = (local, layout.as_deref())
             && e.preedit().is_none()
         {
             let caret = hit(e, l, x + scroll, y, s, single).caret;
+            offset = caret;
             let (a, b) = e.range();
             // A press in the selection keeps it for Cut and Copy. Elsewhere it moves the caret
             // there, and on a misspelled word selects the word, as Chromium does.
@@ -60,7 +67,12 @@ impl<S: 'static> Runtime<S> {
             .filter(|found| found.contains(&(a, b)))
             .map(|_| (a, b, e.text[a..b].to_owned()));
         let suggestions = word.as_ref().map(|w| crate::spell::suggest(&w.2)).unwrap_or_default();
+        let app = own.map(|own| ((own.items)(states!(self), offset), own, offset)).filter(|(items, ..)| !items.entries.is_empty());
         let mut menu = PopupMenu::new();
+        if let Some((items, ..)) = &app {
+            menu.entries.extend(items.entries.iter().cloned());
+            menu = menu.separator();
+        }
         if word.is_some() {
             if suggestions.is_empty() {
                 menu = menu.item(PopupItem::new("no-guesses", label(Label::NoGuesses)).enabled(false));
@@ -108,7 +120,7 @@ impl<S: 'static> Runtime<S> {
             menu,
             anchor: PopupAnchor::Point(at.0, at.1),
             on_pick: Box::new(|_, _, _| {}),
-            field: Some(Box::new(FieldMenu { path, word, suggestions, toggle, languages })),
+            field: Some(Box::new(FieldMenu { path, word, suggestions, toggle, languages, app })),
         });
         true
     }
@@ -117,6 +129,13 @@ impl<S: 'static> Runtime<S> {
     pub(super) fn field_menu_pick(&mut self, menu: FieldMenu, picked: &str, one: &mut Tx) {
         if self.focus.path() != Some(menu.path.as_str()) && self.live(&menu.path).is_some() {
             self.set_focus(Some(menu.path.clone()), false);
+        }
+        if let Some((items, own, at)) = &menu.app
+            && items.find(picked).is_some()
+        {
+            log_event!(self, "field menu pick {picked}");
+            (own.on_pick)(states!(self), picked, *at, one);
+            return;
         }
         let command = |c| KeyEvent { key: Key::Command(c), mods: Mods { cmd: true, ctrl: !cfg!(target_os = "macos"), ..Mods::default() } };
         match picked {
@@ -167,3 +186,7 @@ impl<S: 'static> Runtime<S> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "field_menu_tests.rs"]
+mod tests;

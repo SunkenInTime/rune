@@ -329,6 +329,7 @@ fn same_handlers(
         on_window_focus,
         on_spellcheck,
         on_spellcheck_languages,
+        input_menu,
         modal,
         on_press,
         on_double_press,
@@ -374,6 +375,11 @@ fn same_handlers(
             _ => false,
         }
         && opt_rc_eq(&a.on_spellcheck_languages, on_spellcheck_languages)
+        && match (&a.input_menu, input_menu) {
+            (None, None) => true,
+            (Some(x), Some(y)) => Rc::ptr_eq(&x.items, &y.items) && Rc::ptr_eq(&x.on_pick, &y.on_pick),
+            _ => false,
+        }
         && opt_rc_eq(&a.on_press, on_press)
         && opt_rc_eq(&a.on_double_press, on_double_press)
         && opt_rc_eq(&a.on_secondary_press, on_secondary_press)

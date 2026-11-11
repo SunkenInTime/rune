@@ -142,6 +142,34 @@ impl El {
         self.handlers.on_spellcheck_languages = Some(Rc::new(move |s, tags, tx| f(downcast::<S>(s), tags, tx)));
         self
     }
+    /// On a text field or around one: the app's own items in the field's menu (right-click,
+    /// control-click, the Menu key, Shift+F10), before Rune's (spelling suggestions, Cut, Copy,
+    /// Paste, …) with a separator between, as an AppKit text view's delegate adds Comment or
+    /// Look Up to its menu. `items` builds them each time the menu opens, from the text offset
+    /// the menu is for: the click's position, or the caret's when the keyboard opened it. A
+    /// pick of one calls `on_pick` with its id and that offset, after the field has the focus
+    /// again; Rune's items do what they always did. The click moves the caret or keeps the
+    /// selection as it does without the hook, before `items` runs.
+    ///
+    /// Items are [`PopupItem`](crate::PopupItem)s in a [`PopupMenu`](crate::PopupMenu), with
+    /// separators and submenus. Their ids must not repeat Rune's (`cut`, `copy`, `paste`,
+    /// `select-all`, `learn-spelling`, `no-guesses`, `spellcheck`, `suggestion-N`, `language-*`):
+    /// a menu whose ids repeat doesn't open. The nearest such element around the field, itself
+    /// included, gives the items. A field with its own `on_secondary_press` shows that instead.
+    /// Where there are no native pop-up menus ([`crate::popup_menu_supported`] is false: Linux,
+    /// the web) no field menu opens, with or without these items; such an app draws its own from
+    /// `on_secondary_press_local`, whose `PointerEvent::text_offset` is the click's offset.
+    pub fn input_menu<S: 'static>(
+        mut self,
+        items: impl Fn(&mut S, usize) -> crate::PopupMenu + 'static,
+        on_pick: impl Fn(&mut S, &str, usize, &mut Tx) + 'static,
+    ) -> Self {
+        self.handlers.input_menu = Some(crate::el::InputMenu {
+            items: Rc::new(move |s, at| items(downcast::<S>(s), at)),
+            on_pick: Rc::new(move |s, id, at, tx| on_pick(downcast::<S>(s), id, at, tx)),
+        });
+        self
+    }
     /// Mask a text element or text input before layout; disable undo, copy, cut, selection and
     /// IME composition, omit accessibility text, redact [`Debug`], bypass layout/raster caches,
     /// and zeroize owned buffers on conceal and drop.
