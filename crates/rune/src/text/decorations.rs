@@ -20,6 +20,8 @@ pub(crate) struct PaintedDeco {
     pub deco: Deco,
     pub ring: Option<(Color, f32)>,
     pub byte: u32,
+    /// A line-height fill ([`Span::line_bg`], [`TextHighlight::line_bg`]), painted under the rest.
+    pub line: bool,
 }
 
 impl std::ops::Deref for PaintedDeco {
@@ -34,15 +36,23 @@ pub(super) trait Decoration {
     fn new(deco: Deco, ring: Option<(Color, f32)>, byte: u32) -> Self;
     fn paint(&mut self) -> (&mut Deco, Option<(Color, f32)>);
     fn extend_to(&mut self, _byte: u32) {}
+    fn mark_line(&mut self) {}
 }
 impl Decoration for Deco {
     fn new(deco: Deco, _: Option<(Color, f32)>, _: u32) -> Self { deco }
     fn paint(&mut self) -> (&mut Deco, Option<(Color, f32)>) { (self, None) }
 }
 impl Decoration for PaintedDeco {
-    fn new(deco: Deco, ring: Option<(Color, f32)>, byte: u32) -> Self { Self { deco, ring, byte } }
+    fn new(deco: Deco, ring: Option<(Color, f32)>, byte: u32) -> Self { Self { deco, ring, byte, line: false } }
     fn paint(&mut self) -> (&mut Deco, Option<(Color, f32)>) { (&mut self.deco, self.ring) }
     fn extend_to(&mut self, byte: u32) { self.byte = self.byte.max(byte); }
+    fn mark_line(&mut self) { self.line = true; }
+}
+
+/// A line-height fill's top and bottom for `line` (device px), on whole pixels: one line's
+/// bottom is the next one's top, so fills on touching lines meet without a seam.
+fn line_rows(m: &parley::LineMetrics, top: f32) -> (f32, f32) {
+    ((top + m.block_min_coord).round(), (top + m.block_max_coord).round())
 }
 
 impl TextSystem {
@@ -89,7 +99,32 @@ impl TextSystem {
                 let Some(s) = spans.get(ink as usize - 1) else { continue };
                 let x0 = origin[0] + gr.offset();
                 let w = gr.advance();
-                if let Some(bg) = s.bg {
+                if let Some(bg) = s.bg.filter(|_| s.is_line_bg()) {
+                    let ring = rings
+                        .iter()
+                        .rev()
+                        .find(|&&(ra, rb, _, rw)| rw > 0.0 && ra < s.end && s.start < rb)
+                        .map(|&(_, _, c, rw)| (c, rw * scale));
+                    let (top, bot) = line_rows(m, origin[1]);
+                    let (l, r) = (x0.round(), (x0 + w).round());
+                    let byte = (gr.run().text_range().end as u32).min(s.end).saturating_sub(1);
+                    // Touching runs of one colour on one line (a span split by style) are one rect.
+                    let merge = last_bg.is_some_and(|i: usize| {
+                        let (d, old_ring) = out[i].paint();
+                        d.color == bg && old_ring == ring && d.radius == 0.0 && d.rect[1] == top && (d.rect[0] + d.rect[2] - l).abs() < 1.5
+                    });
+                    if merge {
+                        let painted = &mut out[last_bg.unwrap()];
+                        let (d, _) = painted.paint();
+                        d.rect[2] = d.rect[2].max(r - d.rect[0]);
+                        painted.extend_to(byte);
+                    } else if r > l {
+                        last_bg = Some(out.len());
+                        let mut d = D::new(Deco { rect: [l, top, r - l, bot - top], color: bg, radius: 0.0 }, ring, byte);
+                        d.mark_line();
+                        out.push(d);
+                    }
+                } else if let Some(bg) = s.bg {
                     let ring = rings
                         .iter()
                         .rev()
@@ -210,8 +245,20 @@ impl TextSystem {
             if a >= b || (h.bg.a <= 0.0 && h.ring.is_none()) {
                 continue;
             }
-            let pad = h.pad * scale;
             let ring = h.ring.map(|(c, rw)| (c, rw * scale));
+            if h.line {
+                for (bb, line_idx) in crate::text::glyph_boxes(layout, a, b) {
+                    let Some(l) = layout.get(line_idx) else { continue };
+                    let (top, bot) = line_rows(l.metrics(), origin[1]);
+                    let (x0, x1) = ((origin[0] + bb.x0 as f32).round(), (origin[0] + bb.x1 as f32).round());
+                    if x1 > x0 {
+                        let deco = Deco { rect: [x0, top, x1 - x0, bot - top], color: h.bg, radius: 0.0 };
+                        out.push(PaintedDeco { deco, ring, byte: (b as u32).saturating_sub(1), line: true });
+                    }
+                }
+                continue;
+            }
+            let pad = h.pad * scale;
             let mut last: Option<(usize, usize)> = None;
             for (bb, line_idx) in range_boxes(layout, a, b, false) {
                 let w = (bb.x1 - bb.x0) as f32;

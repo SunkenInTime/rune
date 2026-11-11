@@ -324,11 +324,12 @@ impl<S: 'static> Runtime<S> {
                 self.text.strike_decorations(layout, spans, drawn.as_deref().unwrap_or(&spec.strikes), color, s, d_origin, &mut self.deco_scratch);
             }
             link_fx.decos(layout, drawn_len, s, d_origin, &mut self.deco_scratch);
-            if !spec.rings.is_empty() || spec.highlights.iter().any(|h| h.ring.is_some()) {
+            if !spec.rings.is_empty() || spec.highlights.iter().any(|h| h.ring.is_some() || h.line) || spans.iter().any(crate::text::Span::is_line_bg) {
                 // Adjacent backgrounds overlap by bg_pad. Paint ringed chips after
                 // plain fills so a neighboring fill cannot erase an inset edge;
-                // keep underlines above both. No sorting on the ringless path.
-                self.deco_scratch.sort_by_key(|d| if d.radius == 0.0 { 2 } else { u8::from(d.ring.is_some()) });
+                // keep underlines above both, and line-height fills under all of them.
+                // No sorting on the ringless path.
+                self.deco_scratch.sort_by_key(|d| if d.line { 0 } else if d.radius == 0.0 { 3 } else { 1 + u8::from(d.ring.is_some()) });
             }
             if d_origin != rest_origin || tk != 1.0 {
                 for d in &mut self.deco_scratch {

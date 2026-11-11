@@ -17,6 +17,8 @@ pub struct Span {
     pub color: Option<Color>,
     /// Rounded background behind the span's runs (inline code), padded by `bg_pad` points.
     pub bg: Option<Color>,
+    /// [`Span::LINE_BG`] (set by [`Span::line_bg`]) fills each line's whole height instead,
+    /// square and unpadded.
     pub bg_pad: f32,
     pub underline: Option<Color>,
     /// The family's italic face, or a synthetic oblique when it has none.
@@ -64,6 +66,24 @@ impl Span {
         self.bg = Some(color);
         self.bg_pad = pad;
         self
+    }
+
+    /// A `color` background filling each line the span's glyphs sit on from its top to its
+    /// bottom, square and unpadded, as AppKit draws a `.backgroundColor` attribute: touching
+    /// spans and the lines of a wrapped span meet with no gap or overlap. Its `bg_pad` is
+    /// [`Span::LINE_BG`], which keeps `Span` literals building.
+    pub fn line_bg(mut self, color: Color) -> Span {
+        self.bg = Some(color);
+        self.bg_pad = Span::LINE_BG;
+        self
+    }
+
+    /// The `bg_pad` that makes [`Span::bg`] a [`Span::line_bg`] fill.
+    pub const LINE_BG: f32 = f32::INFINITY;
+
+    /// Whether its background is a [`Span::line_bg`] fill.
+    pub fn is_line_bg(&self) -> bool {
+        self.bg.is_some() && self.bg_pad == Span::LINE_BG
     }
 
     pub fn underline(mut self, color: Color) -> Span {
@@ -320,6 +340,8 @@ pub struct TextHighlight {
     pub(crate) fg: Option<Color>,
     pub(crate) ring: Option<(Color, f32)>,
     pub(crate) pad: f32,
+    /// [`TextHighlight::line_bg`]: square, unpadded, the line's whole height.
+    pub(crate) line: bool,
     pub(crate) key: Option<String>,
 }
 
@@ -333,6 +355,7 @@ impl TextHighlight {
             fg: None,
             ring: None,
             pad: 1.5,
+            line: false,
             key: None,
         }
     }
@@ -349,6 +372,14 @@ impl TextHighlight {
     /// Horizontal padding around each line's background, in points (`1.5` by default).
     pub fn pad(mut self, pad: f32) -> Self {
         self.pad = pad;
+        self
+    }
+    /// Fills each line the range's glyphs sit on from its top to its bottom, square and
+    /// unpadded (its `pad` no longer applies), as AppKit draws a `.backgroundColor` attribute:
+    /// touching highlights and the lines of a wrapped one meet with no gap or overlap, and a
+    /// ring stays square inside it. [`Span::line_bg`] draws the same fill for a span.
+    pub fn line_bg(mut self) -> Self {
+        self.line = true;
         self
     }
     /// Optional key for [`Tx::scroll_into_view`](crate::Tx::scroll_into_view),

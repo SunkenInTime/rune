@@ -1463,6 +1463,14 @@ newline on `Shift+Return` and pastes plain text. The mark and block methods work
   from `rune_kit::syntax::highlight`) over the editor without mutating `TextEdit`. Byte offsets are
   relative to `edit.text` and shift automatically across any active IME preedit, so syntax and
   mention highlights hold through IME composition and undo/redo.
+  `Span::line_bg(color)` makes a span's background a fill from the top of each line its glyphs
+  sit on to the bottom, square and unpadded, as AppKit draws a `.backgroundColor` attribute
+  (comment highlights, find matches, an editor's inline code), where `Span::bg(color, pad)`
+  draws a padded rounded chip around the glyphs. Touching ranges and the lines of a wrapped one
+  meet on whole device pixels with no gap or overlap, so see-through colours don't darken at the
+  seams; a line's ending newline isn't filled. `TextHighlight::new(range, color).line_bg()` is
+  the same fill as a paint-only highlight on any text. Line fills paint under chips, rings and
+  underlines. The span keeps literals building: its `bg_pad` is `Span::LINE_BG`.
 - **HTML paste and export, and data out**: `TextEdit::from_html(html)` and
   `edit.paste_html(html, plain)` parse a safe HTML subset (`b`/`strong`, `i`/`em`, `u`,
   `s`/`del`/`strike`, `a[href]`, `code`, `pre`, `ul`/`ol`/`li`, `blockquote`, `p`/`div`/`br`, and

@@ -101,7 +101,7 @@ use icon::rasterize_icon;
 use trak::{Trak, Traks, font_trak};
 
 pub use atlas::{ATLAS_SIZE, Atlas, AtlasPage, GlyphQuad};
-pub(crate) use cursor::{cursor_from_point, cursor_geometry, line_edge, move_line, range_boxes};
+pub(crate) use cursor::{cursor_from_point, cursor_geometry, glyph_boxes, line_edge, move_line, range_boxes};
 pub use decorations::{Deco, SPAN_RADIUS};
 pub(crate) use decorations::PaintedDeco;
 pub use span::{Ink, Link, LinkPaint, Span, TextHighlight};
@@ -1033,3 +1033,7 @@ mod quality_tests;
 #[cfg(test)]
 #[path = "text/rewrap_tests.rs"]
 mod rewrap_tests;
+
+#[cfg(test)]
+#[path = "text/line_bg_tests.rs"]
+mod line_bg_tests;
