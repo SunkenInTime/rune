@@ -31,6 +31,8 @@ pub(crate) use secure::{MULTILINE_SECURE_MASK, Masking};
 use secure::LineMode;
 mod typing;
 use typing::Typing;
+mod words;
+pub use words::WordMotion;
 pub(crate) use history::History;
 use history::{EditKind, EditedTag, Group};
 
@@ -65,6 +67,8 @@ pub struct TextEdit {
     allowed_blocks: Option<u8>,
     /// Whether a user has edited the value since `replace_text`.
     edited_tag: EditedTag,
+    /// Where word motion and word deletion stop ([`TextEdit::word_motion`]).
+    word_motion: WordMotion,
 }
 
 impl std::fmt::Debug for TextEdit {
@@ -163,6 +167,7 @@ impl TextEdit {
             allowed_marks: None,
             allowed_blocks: None,
             edited_tag: EditedTag::default(),
+            word_motion: WordMotion::Whitespace,
         }
     }
 
@@ -497,6 +502,9 @@ impl TextEdit {
         if self.is_masked() {
             return 0;
         }
+        if self.word_motion == WordMotion::Unicode {
+            return self.prev_unicode_word(i);
+        }
         let s = &self.text;
         let b = s.as_bytes();
         let mut j = i.min(b.len());
@@ -521,6 +529,9 @@ impl TextEdit {
     fn next_word(&self, i: usize) -> usize {
         if self.is_masked() {
             return self.text.len();
+        }
+        if self.word_motion == WordMotion::Unicode {
+            return self.next_unicode_word(i);
         }
         let s = &self.text;
         let b = s.as_bytes();

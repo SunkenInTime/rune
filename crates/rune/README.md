@@ -1293,6 +1293,16 @@ snapshots and retains at most 128 edits / 1 MiB of text (oversized edits drop hi
 Call `TextEdit::clear()` after submission to clear history while retaining focus;
 call `break_history_group()` when setting a selection from custom pointer handling.
 
+Option+Left/Right (Ctrl off macOS) move by word, Shift extends, and Option+Backspace/Delete
+delete a word. By default the stops are runs of white space, so punctuation travels with the word
+it touches. `TextEdit::new(text).word_motion(WordMotion::Unicode)` (or `set_word_motion`) stops
+at Unicode word boundaries instead, as AppKit's text views do: forward to the end of the next
+word, back to the start of the previous one, passing over punctuation and white space. "one, two"
+stops after "one" and after "two", "don't" and "a.b" are one word, an emoji is a word, and
+Chinese, Japanese and Thai split into dictionary words, as a double-click selects them. A pill is
+one word either way. In text with right-to-left runs the arrows keep moving across the line as
+drawn, by the layout's own word stops.
+
 Use `TextEdit::new("").secure()` with `text_input(&edit, style).single_line()` for
 passwords, or mark the element `.single_line().secure()`; kit's `TextInput::secure()`
 passes it through. Each Unicode scalar displays as one bullet, with model-byte

@@ -98,6 +98,7 @@ pub use edit::Mods;
 pub use edit::ParagraphInfo;
 pub use edit::RichStyle;
 pub use edit::TextEdit;
+pub use edit::WordMotion;
 pub use el::Align;
 pub use el::Anchor;
 pub use el::Cursor;
