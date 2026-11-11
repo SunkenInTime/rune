@@ -1333,6 +1333,16 @@ pill, an unnamed group), and `can_undo()` and `can_redo()` say whether there's a
 are its labels (`Label::Typing`, `Label::Paste`, `Label::Cut`), so `rune::set_labels` translates
 them: build "Undo Typing" from them in the app's language.
 
+`TextEdit::new(text).report_changes()` keeps a record of what each edit changes, for ranges an
+app keeps in step with the text (comments anchored to a passage, find matches, bookmarks):
+`edit.take_changes()` returns `TextChange`s, oldest first, each the byte `range` of the text as
+it was replaced by `inserted` bytes. Every edit reports, the user's and the app's: typing,
+deletion, paste, cut, an input method's commit (not its composition), drops, spelling fixes,
+`insert`, `replace_text`, and undo and redo, which report the exact inverse of the edits they
+take back (two places edited in one group come back as two changes, so a range between them
+keeps its place). Read it from `on_input_change` and after the app's own edits; assigning to
+`text` directly reports nothing. Off by default.
+
 Option+Left/Right (Ctrl off macOS) move by word, Shift extends, and Option+Backspace/Delete
 delete a word. By default the stops are runs of white space, so punctuation travels with the word
 it touches. `TextEdit::new(text).word_motion(WordMotion::Unicode)` (or `set_word_motion`) stops

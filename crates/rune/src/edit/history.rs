@@ -17,6 +17,8 @@ pub(super) struct Snapshot {
     marks: Vec<MarkRange>,
     blocks: Vec<Block>,
     soft_breaks: Vec<u32>,
+    /// Where `TextEdit::report_changes`'s record stood, so a step finds its own changes.
+    mark: changes::Mark,
 }
 
 impl Snapshot {
@@ -73,6 +75,9 @@ pub(super) struct Change {
     before: Snapshot,
     after: Snapshot,
     name: Option<StepName>,
+    /// The text changes the step made, while `TextEdit::report_changes` was on: undo reports
+    /// their inverses, redo reports them again.
+    changes: Option<Vec<TextChange>>,
 }
 
 /// What an undo step is called, for an Edit menu's "Undo Typing" ([`TextEdit::undo_name`]).
@@ -106,6 +111,7 @@ impl Change {
             + (self.before.marks.len() + self.after.marks.len()) * std::mem::size_of::<MarkRange>()
             + (self.before.blocks.len() + self.after.blocks.len()) * std::mem::size_of::<Block>()
             + (self.before.soft_breaks.len() + self.after.soft_breaks.len()) * std::mem::size_of::<u32>()
+            + self.changes.as_ref().map_or(0, |c| c.len() * std::mem::size_of::<TextChange>())
     }
 }
 
@@ -220,6 +226,7 @@ impl TextEdit {
             marks: self.marks.clone(),
             blocks: self.blocks.clone(),
             soft_breaks: self.soft_breaks.clone(),
+            mark: self.changes.mark(),
         }
     }
 
@@ -248,6 +255,7 @@ impl TextEdit {
         let Some(before) = before.filter(|_| self.recording()) else {
             return;
         };
+        let changes = self.changes.step_since(before.mark);
         let after = self.snapshot_now();
         if before.same_doc(&after) {
             return;
@@ -268,9 +276,10 @@ impl TextEdit {
             let last = h.undo.back_mut().unwrap();
             h.bytes -= last.bytes();
             last.after = after;
+            last.changes = last.changes.take().zip(changes).map(|(a, b)| changes::merge(a, b));
             h.bytes += last.bytes();
         } else {
-            let change = Change { before, after, name };
+            let change = Change { before, after, name, changes };
             h.bytes += change.bytes();
             h.undo.push_back(change);
         }
@@ -415,6 +424,7 @@ impl TextEdit {
         let Some(change) = h.undo.pop_back() else { return };
         // Public model text may have been replaced by the app. Never restore stale history.
         if self.text != change.after.text.as_str() { *h = History::default(); return; }
+        self.report_replay(change.changes.as_deref(), true, change.after.text.as_str(), change.before.text.as_str());
         self.restore(&change.before);
         Arc::make_mut(&mut self.history).redo.push(change);
     }
@@ -426,6 +436,7 @@ impl TextEdit {
         let h = Arc::make_mut(&mut self.history);
         let Some(change) = h.redo.pop() else { return };
         if self.text != change.before.text.as_str() { *h = History::default(); return; }
+        self.report_replay(change.changes.as_deref(), false, change.before.text.as_str(), change.after.text.as_str());
         self.restore(&change.after);
         Arc::make_mut(&mut self.history).undo.push_back(change);
     }

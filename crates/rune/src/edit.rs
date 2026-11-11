@@ -15,6 +15,9 @@ use crate::color::Color;
 use crate::text::Link;
 
 mod caret_motion;
+mod changes;
+pub use changes::TextChange;
+use changes::ChangeLog;
 mod display;
 mod history;
 mod html;
@@ -69,6 +72,8 @@ pub struct TextEdit {
     edited_tag: EditedTag,
     /// Where word motion and word deletion stop ([`TextEdit::word_motion`]).
     word_motion: WordMotion,
+    /// What edits changed, while [`TextEdit::report_changes`] is on.
+    changes: ChangeLog,
 }
 
 impl std::fmt::Debug for TextEdit {
@@ -168,6 +173,7 @@ impl TextEdit {
             allowed_blocks: None,
             edited_tag: EditedTag::default(),
             word_motion: WordMotion::Whitespace,
+            changes: ChangeLog::default(),
         }
     }
 
@@ -397,6 +403,15 @@ impl TextEdit {
     /// Replace the whole draft and discard its history, preserving focus and password mode.
     pub fn replace_text(&mut self, text: impl Into<String>) {
         let text = text.into();
+        if self.text != text {
+            self.changes.push(0..self.text.len(), text.len(), false);
+        }
+        self.replace_whole(text);
+    }
+
+    /// [`replace_text`](Self::replace_text) without reporting it.
+    fn replace_whole(&mut self, text: String) {
+        self.changes.forget_steps();
         self.text.zeroize();
         let line_count = if self.secure { 0 } else { 1 + count_newlines(text.as_bytes()) };
         self.text = text;
@@ -716,6 +731,7 @@ impl TextEdit {
             // it did before blocks and marks existed.
             let removed = count_newlines(&self.text.as_bytes()[a..b]);
             let added = count_newlines(s.as_bytes());
+            self.changes.push(a..b, ins_len, true);
             self.text.replace_range(a..b, s);
             self.blocks.resize(self.blocks.len() + added - removed, Block::Paragraph);
             self.anchor = a + ins_len;
@@ -839,6 +855,7 @@ impl TextEdit {
             }
         }
         self.marks = updated_marks;
+        self.changes.push(a..b, ins_len, true);
         self.text.replace_range(a..b, s);
         self.anchor = a + ins_len;
         self.focus = self.anchor;
@@ -856,7 +873,8 @@ impl TextEdit {
             next.push_str(&self.text[..a]);
             next.push_str(s);
             next.push_str(&self.text[b..]);
-            self.replace_text(next);
+            self.changes.push(a..b, s.len(), false);
+            self.replace_whole(next);
             self.anchor = a + s.len();
             self.focus = self.anchor;
             self.mark_edited();
