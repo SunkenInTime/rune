@@ -250,6 +250,8 @@ impl Tx {
     }
 
     /// Close the window after this handler, as the close button would (`App::on_close` runs).
+    /// It doesn't ask `App::on_close_request`: an app that refused the user's close calls this
+    /// once the user chose to close anyway.
     pub fn close_window(&mut self) {
         self.shell = self.shell.max(Some(Shell::Close));
     }

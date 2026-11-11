@@ -140,7 +140,7 @@ impl<S: 'static> Host<S> {
                 if covered { self.land_frame(); }
                 self.set_cover(Cover::Windows, covered);
             }
-            WakeEvent::Reopen | WakeEvent::Turn | WakeEvent::Quit(_) => {}
+            WakeEvent::Reopen | WakeEvent::Turn | WakeEvent::Quit(_) | WakeEvent::AskQuit => {}
         }
     }
 
@@ -207,7 +207,15 @@ impl<S: 'static> Host<S> {
                 if self.life.finished() || self.win.is_none() { return; }
             }
             WindowEvent::CloseRequested => {
-                self.close(event_loop);
+                // The close button, Alt+F4, the window manager's or ⌘W's Close: the app may refuse.
+                // Refused, it carries out what the hook asked (`Tx::close_window` still closes).
+                if self.rt.request_close(crate::CloseRequest::Window) {
+                    self.close(event_loop);
+                } else {
+                    self.shell(event_loop);
+                    // The hook's change (its alert) draws.
+                    if self.rt.stale() && let Some(w) = self.shown_win() { w.request_redraw(); }
+                }
                 return;
             }
             WindowEvent::HoveredFile(path) => { self.files.file(path, false); return; }

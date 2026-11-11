@@ -28,6 +28,17 @@ impl Windows {
         }
     }
 
+    /// macOS: the user asked to quit (⌘Q, the Dock's Quit) and AppKit was told no
+    /// (`quit::mac`): every window's `App::on_close_request` hears it in window order, and
+    /// the app quits as `Tx::quit` does unless one refused.
+    pub(super) fn ask_quit(&mut self, event_loop: &ActiveEventLoop) {
+        for host in self.hosts.iter_mut().flatten() {
+            if !host.ask_close(event_loop) || event_loop.exiting() { return; }
+        }
+        let _ = crate::quit::send(crate::quit::Event::Start { ending: false, after: crate::quit::After::Exit });
+        event_loop.exit();
+    }
+
     /// The app was reopened: every `on_reopen` hook runs, then, unless one handled it or the
     /// app is an accessory, the default brings back a window when none shows (`reopen::target`).
     pub(super) fn reopen(&mut self, event_loop: &ActiveEventLoop) {

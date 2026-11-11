@@ -141,6 +141,9 @@ mod text_marks;
 pub use text_marks::TextMark;
 #[path = "runtime/selection/click.rs"]
 mod input_click;
+#[path = "runtime/input/close_request.rs"]
+mod close_request;
+pub use close_request::CloseRequest;
 #[path = "runtime/input/help.rs"]
 mod help;
 #[path = "runtime/input/help_look.rs"]
@@ -400,6 +403,8 @@ pub struct Runtime<S: 'static> {
     mods_heard: crate::Mods,
     /// `App::on_visibility`.
     pub(crate) on_visibility: Option<fn(&mut S, bool, &mut Tx)>,
+    /// `App::on_close_request`.
+    pub(crate) on_close_request: Option<fn(&mut S, CloseRequest, &mut Tx) -> bool>,
     /// `App::on_ime` and the composition it has open.
     pub(crate) app_ime: app_ime::AppIme<S>,
     view: fn(&S, &mut Cx<S>) -> El,
@@ -1054,6 +1059,7 @@ impl<S: 'static> Runtime<S> {
             on_mods: None,
             mods_heard: Default::default(),
             on_visibility: None,
+            on_close_request: None,
             app_ime: Default::default(),
             live_subscriptions: Vec::new(),
             live_dirty: false,

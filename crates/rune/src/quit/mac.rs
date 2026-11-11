@@ -4,6 +4,11 @@
 //! app quitting and lets the quit go ahead; `applicationWillTerminate:` follows at once, where
 //! winit ends the loop and `Windows::exiting` runs every window's `App::on_quit`, then its
 //! `on_close`.
+//!
+//! Once a window hears close requests (`App::on_close_request`), the user's Quit (a menu's Quit,
+//! ⌘Q, the Dock's) is cancelled here and handed to the loop, which asks every window and quits
+//! itself if they all agree, as `Tx::quit` does. A quit the system starts (logout, restart,
+//! shutdown: the quit Apple event carries a reason) goes ahead without asking, as before.
 
 use std::cell::Cell;
 use std::ffi::{c_char, c_void};
@@ -16,6 +21,8 @@ use objc2_foundation::MainThreadMarker;
 thread_local! {
     /// The delegate class Rune added the method to.
     static HOOKED: Cell<*const AnyClass> = const { Cell::new(std::ptr::null()) };
+    /// Hands the user's Quit to the loop; false when it couldn't.
+    static ASK: std::cell::RefCell<Option<Box<dyn Fn() -> bool>>> = const { std::cell::RefCell::new(None) };
 }
 
 unsafe extern "C" {
@@ -24,15 +31,45 @@ unsafe extern "C" {
 
 /// `NSTerminateNow`.
 const TERMINATE_NOW: usize = 1;
+/// `NSTerminateCancel`.
+const TERMINATE_CANCEL: usize = 0;
+/// `keyAEQuitReason` ('why?'), the attribute a logout, restart or shutdown's quit event carries.
+const QUIT_REASON: u32 = u32::from_be_bytes(*b"why?");
+
+/// Whether the quit being asked about comes from the system (logout, restart, shutdown) rather
+/// than the user's Quit: its Apple event says why.
+fn system_quit() -> bool {
+    let Some(class) = AnyClass::get("NSAppleEventManager") else { return false };
+    // SAFETY: main thread. `sharedAppleEventManager` and `currentAppleEvent` return borrowed
+    // objects or nil; `attributeDescriptorForKeyword:` takes an `AEKeyword` (`UInt32`) and
+    // returns a descriptor or nil.
+    unsafe {
+        let manager: *mut AnyObject = msg_send![class, sharedAppleEventManager];
+        let Some(manager) = manager.as_ref() else { return false };
+        let event: *mut AnyObject = msg_send![manager, currentAppleEvent];
+        let Some(event) = event.as_ref() else { return false };
+        let reason: *mut AnyObject = msg_send![event, attributeDescriptorForKeyword: QUIT_REASON];
+        !reason.is_null()
+    }
+}
 
 extern "C" fn should_terminate(_: *mut AnyObject, _: Sel, _: *mut AnyObject) -> usize {
+    // The loop asks the windows and quits itself if they agree (`Windows::ask_quit`).
+    if super::ASKS.load(std::sync::atomic::Ordering::Relaxed)
+        && !super::quitting()
+        && !system_quit()
+        && ASK.with(|ask| ask.borrow().as_ref().is_some_and(|ask| ask()))
+    {
+        return TERMINATE_CANCEL;
+    }
     // Windows::exiting carries out the quit's effects.
     let _ = super::send(super::Event::Start { ending: false, after: super::After::Exit });
     TERMINATE_NOW
 }
 
-pub(super) fn install() {
+pub(super) fn install(ask: impl Fn() -> bool + 'static) {
     let Some(mtm) = MainThreadMarker::new() else { return };
+    ASK.with(|slot| *slot.borrow_mut() = Some(Box::new(ask)));
     let app = NSApplication::sharedApplication(mtm);
     let selector = sel!(applicationShouldTerminate:);
     // SAFETY: AppKit calls and runtime changes on the main thread. The added function has the

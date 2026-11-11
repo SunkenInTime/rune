@@ -53,6 +53,7 @@ impl<S: 'static> AnyHost for Host<S> {
     fn reopen_hook(&mut self, event_loop: &ActiveEventLoop, has_visible_windows: bool) -> bool {
         self.in_turn(|h| h.reopen_hook_in_turn(event_loop, has_visible_windows))
     }
+    fn ask_close(&mut self, event_loop: &ActiveEventLoop) -> bool { self.in_turn(|h| h.ask_close_in_turn(event_loop)) }
     fn apply_pending(&mut self, event_loop: &ActiveEventLoop) { self.in_turn(|h| h.apply_pending_in_turn(event_loop)) }
     fn reopen(&mut self, event_loop: &ActiveEventLoop) { self.in_turn(|h| h.reopen_in_turn(event_loop)) }
     fn new_events(&mut self, event_loop: &ActiveEventLoop, cause: StartCause) { self.in_turn(|h| h.new_events_in_turn(event_loop, cause)) }
@@ -132,6 +133,16 @@ impl<S: 'static> Host<S> {
         self.drain(event_loop, false);
         self.publish();
         handled.load(Ordering::Relaxed)
+    }
+
+    fn ask_close_in_turn(&mut self, event_loop: &ActiveEventLoop) -> bool {
+        if !self.started || self.life.finished() { return true; }
+        let proceed = self.rt.request_close(crate::CloseRequest::Quit);
+        // What the hook asked (an alert drawn, `Tx::quit`) goes as an update's does.
+        self.shell(event_loop);
+        if let Some(w) = self.shown_win().filter(|_| self.rt.stale()) { w.request_redraw(); }
+        self.publish();
+        proceed
     }
 
     fn apply_pending_in_turn(&mut self, event_loop: &ActiveEventLoop) {

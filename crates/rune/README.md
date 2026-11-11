@@ -568,6 +568,7 @@ let app = rune::App::new(spec)
     .accessory()                   // macOS: menu-bar app, no Dock icon (h.set_dock_icon(true) shows it)
     .standard_menus()              // macOS: Edit, Minimize ⌘M and Close ⌘W (no Quit); regular apps get them anyway
     .on_close(|s, tx| ..)          // runs before every close; tx.quit() quits instead
+    .on_close_request(|s, why, tx| true) // the user asks to close or quit; false keeps the window
     .on_reopen(|s, has_visible, tx| false); // macOS: Dock icon clicked; true skips the default
     // .window_options(WindowOptions { max_size, resizable, .. }) for this window
 let handle = app.handle();     // AppHandle<S>: Clone + Send + Sync, usable before run
@@ -594,6 +595,30 @@ app.run();
 - Handlers ask the shell with `Tx::close_window()`, `Tx::minimize()` and `Tx::quit()` (quit wins,
   and either wins over minimize). Minimize does nothing for a hidden window, a panel, a launcher,
   an overlay, a borderless window or a window that can't minimize (debug builds say so).
+- Refusing a close: `App::on_close_request(|s, why: CloseRequest, tx| -> bool)` (and
+  `WindowSpec::on_close_request`) runs when the user asks to close the window, before anything
+  hides or closes, and returns whether it goes ahead. False leaves the window up as it was, so an
+  editor with unsaved changes shows its alert in it; once the user chooses, `tx.close_window()`
+  (or `tx.quit()`) closes without asking again. `CloseRequest::Window` is the close button,
+  Alt+F4, the window manager's Close and ⌘W (the standard Window › Close, or a ⌘W nothing took);
+  on true the close goes on as before (`on_close`, then `keep_running`'s hide or the window's
+  end). `CloseRequest::Quit` is macOS Quit from a menu (⌘Q) or the Dock: once a window has the
+  hook, Rune answers AppKit's `applicationShouldTerminate:` with Cancel, asks every window in
+  turn, and quits as `tx.quit()` does unless one refused. Closes and quits the app asks for
+  (`Tx::close_window`, `Tx::quit`, `AppHandle::close`, `WindowHandle::close`) never ask, and nor
+  do ends the system starts: a macOS logout, restart or shutdown (the quit event carries a
+  reason) and a Windows session end, where `on_quit` runs as before. A hook that calls
+  `tx.close_window()` closes whatever it returns. Headless scripts ask with `{"close": true}`;
+  `--trace` notes `close-request:window:allowed` or `:refused`, and `Runtime::request_close`
+  asks from a test.
+
+  ```rust
+  .on_close_request(|s: &mut Editor, _, _| {
+      if !s.doc.dirty { return true }
+      s.alert = Some(Alert::unsaved()); // its Don't Save button calls tx.close_window()
+      false
+  })
+  ```
 - `Tx::set_title("Draft — Notes")` sets the window's title from a handler or `update`. The window
   opens with `AppSpec`'s title, keeps the last one set when it closes and opens again, and headless
   `--tree` output shows it as `"title"`.

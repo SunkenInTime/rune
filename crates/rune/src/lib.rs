@@ -287,6 +287,7 @@ pub use rune_motion::Transition;
 pub use rune_motion::Travel;
 pub use rune_motion::Vec2;
 pub use rune_motion::Velocity;
+pub use runtime::CloseRequest;
 pub use runtime::Cx;
 pub use runtime::ElementInfo;
 pub use runtime::Env;
