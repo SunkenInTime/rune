@@ -256,6 +256,19 @@ impl<S: 'static> Runtime<S> {
                             .map(|g| zoom_glyph(g, pl_origin, pl_r_origin, tk / raster)));
                     }
                 }
+                // A field another element has the keyboard from keeps its selection, if its
+                // `SelectionStyle::unfocused` asks.
+                if !e.focused && !departing
+                    && let Some((highlight, ink)) = inp.selection_style.and_then(|st| st.pick_unfocused())
+                    && let (a, b) = e.range()
+                    && a != b
+                    && e.preedit().is_none()
+                {
+                    let (da, db) = e.display_selection_range(a, b);
+                    selectable::push_field_selection(&mut self.instances, layout, da, db,
+                        origin, tk, premul(highlight, o, srgb), s, clip, fade);
+                    selected_ink = ink.map(|c| (da, db, premul(c, o, srgb)));
+                }
                 if e.focused && !departing {
                     let (a, b) = e.range();
                     if a != b && e.preedit().is_none() {
