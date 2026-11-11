@@ -1618,6 +1618,13 @@ Or ask from a handler, with no executor or waker to wire up:
   the same for a Save dialog, and `tx.open_folder` for an Open dialog that picks a folder
   (`FileDialogKind::Folder`, `"kind": "folder"` in `--tree`; filters and file name don't apply;
   the portal's `directory` chooser on Linux).
+- `FileDialogOptions::prompt("Open Folder")` labels the default button and `.message(..)` adds
+  a line explaining the dialog ("Images are copied next to the document"). macOS shows both on
+  the panel (`NSSavePanel.prompt` and `.message`; a message replaces the title, which rfd shows
+  as the message since a sheet has no title bar). The Linux portal takes the prompt as its
+  `accept_label` and has nowhere to show a message. Windows keeps its own button label and
+  shows neither: rfd doesn't reach `IFileDialog::SetOkButtonLabel`. `--tree` shows them as
+  `"prompt"` and `"message"`.
 - `tx.open_files(options, |s, result, tx| ..)` is an Open dialog that picks several files
   (Shift- and Cmd/Ctrl-click in the dialog): `result` is `Ok(paths)` with every chosen file in
   the dialog's order, an empty list when the user cancels, or the same errors as `open_file`.

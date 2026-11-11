@@ -52,6 +52,7 @@ fn request_options<'a>(kind: FileDialogKind, many: bool, options: &'a FileDialog
         map.insert("current_folder", Variant::from(bytes));
     }
     if kind == FileDialogKind::Folder { map.insert("directory", Variant::from(true)); }
+    if let Some(label) = options.prompt.as_deref().filter(|s| !s.is_empty()) { map.insert("accept_label", Variant::from(label)); }
     if many && kind == FileDialogKind::Open { map.insert("multiple", Variant::from(true)); }
     if kind == FileDialogKind::Save && let Some(name) = options.file_name.as_deref().filter(|s| !s.is_empty()) {
         map.insert("current_name", Variant::from(name));
@@ -142,7 +143,7 @@ mod tests {
     #[test]
     fn options_carry_token_filters_folder_and_save_name() {
         let options = FileDialogOptions { title: "Import".into(), directory: Some("/home/a/Downloads".into()),
-            file_name: Some("export.csv".into()), filters: vec![] }.filter("Exports", &["csv"]);
+            file_name: Some("export.csv".into()), ..Default::default() }.filter("Exports", &["csv"]);
         let open = request_options(FileDialogKind::Open, false, &options, "t1");
         assert_eq!(open.get("handle_token"), Some(&Variant::from("t1")));
         assert_eq!(open.get("filters"), Some(&Variant::from(vec![("Exports".to_string(), vec![(0u32, "*.csv".to_string())])])));
@@ -150,6 +151,11 @@ mod tests {
         assert!(!open.contains_key("current_name"));
         assert!(!open.contains_key("directory"));
         assert!(!open.contains_key("multiple"));
+        assert!(!open.contains_key("accept_label"), "no prompt keeps the portal's own label");
+        let labelled = options.clone().prompt("Open Folder").message("Not shown by the portal");
+        let folder_labelled = request_options(FileDialogKind::Folder, false, &labelled, "t6");
+        assert_eq!(folder_labelled.get("accept_label"), Some(&Variant::from("Open Folder")));
+        assert_eq!(folder_labelled.len(), request_options(FileDialogKind::Folder, false, &options, "t6").len() + 1, "the message has no portal option");
         let several = request_options(FileDialogKind::Open, true, &options, "t5");
         assert_eq!(several.get("multiple"), Some(&Variant::from(true)));
         assert_eq!(several.get("filters"), open.get("filters"));
