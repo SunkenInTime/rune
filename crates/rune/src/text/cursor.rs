@@ -233,11 +233,21 @@ pub(crate) fn range_boxes(
     b: usize,
     pill_boxes: bool,
 ) -> Vec<(parley::BoundingBox, usize)> {
+    boxes(layout, a, b, pill_boxes, true)
+}
+
+/// [`range_boxes`] of only the glyphs of bytes `a..b`: no room for a line's ending newline, and
+/// no pill chips. What a line-height background fills (`Span::line_bg`).
+pub(crate) fn glyph_boxes(layout: &Layout<Ink>, a: usize, b: usize) -> Vec<(parley::BoundingBox, usize)> {
+    boxes(layout, a, b, false, false)
+}
+
+fn boxes(layout: &Layout<Ink>, a: usize, b: usize, pill_boxes: bool, newline: bool) -> Vec<(parley::BoundingBox, usize)> {
     use parley::{BreakReason, editing::Cursor, editing::Selection, layout::Affinity};
     if a >= b {
         return Vec::new();
     }
-    if layout.inline_boxes().next().is_none() {
+    if newline && layout.inline_boxes().next().is_none() {
         return Selection::new(
             Cursor::from_byte_index(layout, a, Affinity::Downstream),
             Cursor::from_byte_index(layout, b, Affinity::Upstream),
@@ -254,7 +264,8 @@ pub(crate) fn range_boxes(
         let m = line.metrics();
         let line_min = m.block_min_coord.min(m.content_block_min_coord) as f64;
         let line_max = m.block_max_coord.max(m.content_block_max_coord) as f64;
-        let newline_ws = if line.break_reason() == BreakReason::Explicit
+        let newline_ws = if newline
+            && line.break_reason() == BreakReason::Explicit
             && lr.end > lr.start
             && range.contains(&(lr.end - 1))
         {

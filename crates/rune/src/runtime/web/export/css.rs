@@ -282,7 +282,8 @@ pub(super) fn text_html(spec: &TextSpec) -> String {
             if s.mono { style.push_str("font-family:var(--rune-mono);"); }
             if let Some(z) = s.size { let _ = write!(style, "font-size:{};", px(z)); }
             if let Some(c) = s.color { let _ = write!(style, "color:{};", color(c)); }
-            if let Some(c) = s.bg { let _ = write!(style, "background:{};border-radius:3px;padding:0 {};", color(c), px(s.bg_pad)); }
+            if let Some(c) = s.bg.filter(|_| s.is_line_bg()) { let _ = write!(style, "background:{};", color(c)); }
+            else if let Some(c) = s.bg { let _ = write!(style, "background:{};border-radius:3px;padding:0 {};", color(c), px(s.bg_pad)); }
             if let Some(c) = s.underline { let _ = write!(style, "text-decoration:underline {};", color(c)); }
             if s.italic { style.push_str("font-style:italic;"); }
         }

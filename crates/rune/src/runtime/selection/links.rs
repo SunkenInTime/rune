@@ -100,7 +100,7 @@ impl LinkFx {
                         }
                     }
                     if !matched {
-                        out.push(PaintedDeco { deco: Deco { rect, color: p.bg.unwrap_or(Color::TRANSPARENT), radius: 4.0 * s }, ring, byte: b.saturating_sub(1) });
+                        out.push(PaintedDeco { deco: Deco { rect, color: p.bg.unwrap_or(Color::TRANSPARENT), radius: 4.0 * s }, ring, byte: b.saturating_sub(1), line: false });
                     }
                 }
                 if let (Some(c), Some(l)) = (p.underline, layout.get(line)) {
@@ -115,7 +115,7 @@ impl LinkFx {
                     }) {
                         d.color = c;
                     } else {
-                        out.push(PaintedDeco { deco: Deco { rect: [x0, y, w, s.max(1.0)], color: c, radius: 0.0 }, ring: None, byte: 0 });
+                        out.push(PaintedDeco { deco: Deco { rect: [x0, y, w, s.max(1.0)], color: c, radius: 0.0 }, ring: None, byte: 0, line: false });
                     }
                 }
             }
@@ -196,7 +196,7 @@ impl<S: 'static> Runtime<S> {
                 } else { p }
             } else { continue };
             let (a, b) = drawn(&self.nodes[i], l.start, l.end);
-            let pad = spec.spans.iter().find(|sp| sp.start < l.end && sp.end > l.start && sp.bg.is_some()).map_or(2.0, |sp| sp.bg_pad);
+            let pad = spec.spans.iter().find(|sp| sp.start < l.end && sp.end > l.start && sp.bg.is_some()).map_or(2.0, |sp| if sp.is_line_bg() { 0.0 } else { sp.bg_pad });
             fx.push((a, b, paint, pad, !spec.rings.is_empty()));
         }
         LinkFx(fx)

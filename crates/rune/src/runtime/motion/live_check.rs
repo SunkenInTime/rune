@@ -231,7 +231,7 @@ impl NodePrint {
             ("rings", |t| key(|h| for &(a, b, c, w) in &t.rings { (a, b, c, w.to_bits()).hash(h) }), None),
             ("strikes", |t| key(|h| t.strikes.hash(h)), None),
             ("highlights", |t| key(|h| for hl in &t.highlights {
-                (hl.start, hl.end, hl.bg, hl.fg, hl.pad.to_bits(), &hl.key, hl.ring.map(|(c, w)| (c, w.to_bits()))).hash(h)
+                (hl.start, hl.end, hl.bg, hl.fg, hl.pad.to_bits(), hl.line, &hl.key, hl.ring.map(|(c, w)| (c, w.to_bits()))).hash(h)
             }), None),
         ];
         parts.iter().find(|(_, k, _)| k(a) != k(b)).map(|&(what, _, show)| Difference {
