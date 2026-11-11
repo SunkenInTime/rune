@@ -16,8 +16,9 @@ use crate::tok::TextStyle;
 /// Line heights (points) for the runs of `layout`'s monospace spans, and of the smaller spaces
 /// padding them, whose box would stand out of the strut of proportional `style` text, by byte
 /// range. Code larger than the text keeps its own box, which may grow the line as a browser's does.
-pub(super) fn mono_fits(layout: &Layout<Ink>, text: &str, spans: &[Span], style: TextStyle, scale: f32, strut: (f32, f32)) -> Vec<(Range<usize>, f32)> {
-    if !spans.iter().any(|s| s.mono) || style.size <= 0.0 || scale <= 0.0 {
+/// `any_mono` is whether the text has monospace spans (a paragraph's longer text may when it doesn't).
+pub(super) fn mono_fits(layout: &Layout<Ink>, text: &str, spans: &[Span], any_mono: bool, style: TextStyle, scale: f32, strut: (f32, f32)) -> Vec<(Range<usize>, f32)> {
+    if !any_mono || style.size <= 0.0 || scale <= 0.0 {
         return Vec::new();
     }
     // Code, and the smaller spaces that stand for its padding: they make room and show nothing.

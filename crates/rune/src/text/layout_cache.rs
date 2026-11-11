@@ -47,7 +47,7 @@ pub(super) const STALE_BYTES: usize = 3 << 20;
 /// Drops what `cache` hasn't used in the last two commits once it outgrows [`STALE_BYTES`],
 /// least recently used first. A view's layouts all share the commit it was last shown in, so
 /// that commit's are kept while the budget lasts rather than all dropped together.
-fn evict<T>(cache: &mut Cache<T>, g: u32) {
+pub(super) fn evict<T>(cache: &mut Cache<T>, g: u32) {
     let stale = |used: u32| g.wrapping_sub(used) >= 2;
     let total: usize = cache.values().filter(|e| stale(e.used)).map(|e| e.cost as usize).sum();
     if total <= STALE_BYTES {
@@ -94,6 +94,7 @@ impl TextSystem {
         self.shapes.retain(|_, key| layouts.contains_key(key));
         evict(&mut self.elisions, g);
         evict(&mut self.runs, g);
+        self.end_commit_paragraphs(g);
         self.generation = g.wrapping_add(1);
     }
 

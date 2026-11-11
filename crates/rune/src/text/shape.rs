@@ -3,6 +3,91 @@
 
 use super::*;
 
+/// A pill's label range and the room before and after it for its chip, in device px. Its
+/// boxes keep `index`, the pill's place in the text's pill list, in their id.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct PillBox {
+    pub(super) index: usize,
+    pub(super) range: std::ops::Range<usize>,
+    pub(super) lead: u32,
+    pub(super) trail: u32,
+}
+
+/// The pills of `text` that keep a chip: ranges that fail the checks keep none.
+pub(super) fn pill_boxes(text: &str, pills: &[PillChip], size: f32, scale: f32) -> Vec<PillBox> {
+    let pm = PillMetrics::new(size);
+    pills
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let r = (p.start as usize).min(text.len())..(p.end as usize).min(text.len());
+            let (lead, trail) = match &p.bare {
+                Some(b) => (b.size + b.gap, 0.0),
+                None => (pm.lead(p.icon.is_some()), pm.trail()),
+            };
+            PillBox { index: i, range: r, lead: (lead * scale).round() as u32, trail: (trail * scale).round() as u32 }
+        })
+        .filter(|p| {
+            let r = &p.range;
+            !r.is_empty() && text.is_char_boundary(r.start) && text.is_char_boundary(r.end) && !text.as_bytes()[r.clone()].contains(&b'\n')
+        })
+        .collect()
+}
+
+/// What shaping found when it checked each run's spacing against its font's `trak` table.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(super) struct Probe {
+    /// A run's font needs other spacing than its style range predicted.
+    pub(super) mismatch: bool,
+    /// Some run's font needs nonzero spacing.
+    pub(super) exact_nonzero: bool,
+}
+
+/// How [`TextSystem::shape_text`] treats runs whose font needs other spacing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum Exact {
+    /// Shapes again with each run's own spacing when one needs it: a whole text.
+    Local,
+    /// Keeps the first shaping: a paragraph whose text decides with its other paragraphs.
+    Probe,
+    /// Shapes again with each run's own spacing, `nonzero` when any run of the whole text
+    /// needs nonzero spacing.
+    Force { nonzero: bool },
+}
+
+/// What shaping a paragraph alone would decide differently from shaping the whole text it is
+/// part of: whether spacing that only corrects `trak` turns optional ligatures back on, whether
+/// inline code keeps inside the strut (any mono span), and whether Windows picks system faces
+/// by weight (any non-ASCII text).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(super) struct WholeFacts {
+    pub(super) corrected: bool,
+    pub(super) any_mono: bool,
+    pub(super) non_ascii: bool,
+}
+
+/// The letter spacing text in `style` at `scale` gets at a size from a font's `trak` table
+/// (see `trak.rs`), on top of `style.tracking`. An explicit optical size `o` picks the entry
+/// instead, as Core Text tracks `o`-point text scaled to the set size; spans scale the lookup
+/// with their size.
+fn tracking(style: TextStyle, scale: f32) -> impl Fn(Option<Rc<Trak>>, f32) -> f32 {
+    let trak_tag = parley::setting::Tag::new(b"trak");
+    let tracked = parley::FontFeature::parse_css_list(style.features).flatten().filter(|f| f.tag == trak_tag).last().is_none_or(|f| f.value != 0);
+    let optical = match style.optical_size {
+        OpticalSize::Fixed(o) if o.is_finite() && o > 0.0 && style.size > 0.0 => Some(o),
+        _ => None,
+    };
+    move |trak: Option<Rc<Trak>>, size: f32| {
+        let px = size * scale;
+        let points = px / scale;
+        // `o` itself at the style's size (a run's size comes back through device px).
+        let points = optical.map_or(points, |o| {
+            if (points - style.size).abs() <= style.size * 1e-6 { o } else { o * points / style.size }
+        });
+        style.tracking + trak.map_or(0.0, |t| t.spacing(px, points, tracked) / scale)
+    }
+}
+
 fn variations(style: TextStyle, size: f32) -> Vec<parley::FontVariation> {
     let mut settings: Vec<_> = parley::FontVariation::parse_css_list(style.variations).flatten().collect();
     let opsz = parley::setting::Tag::new(b"opsz");
@@ -83,34 +168,20 @@ impl TextSystem {
         let g = self.generation;
         if cache && let Some(Entry { value: l, used, .. }) = self.layouts.get_mut(&key) {
             *used = g;
-            // A width change re-breaks the newest layout, not one measured since at another.
-            self.shapes.entry(shape_key).or_insert(key);
-            return l.clone();
-        }
-        // Each pill's label range, and the room before and after it in device px; boxes keep
-        // the pill's index in their id, so ranges that fail the checks keep no chip.
-        let pm = PillMetrics::new(style.size);
-        let pills: Vec<(usize, std::ops::Range<usize>, u32, u32)> = pills
-            .iter()
-            .enumerate()
-            .map(|(i, p)| {
-                let r = (p.start as usize).min(text.len())..(p.end as usize).min(text.len());
-                let (lead, trail) = match &p.bare {
-                    Some(b) => (b.size + b.gap, 0.0),
-                    None => (pm.lead(p.icon.is_some()), pm.trail()),
-                };
-                (i, r, (lead * scale).round() as u32, (trail * scale).round() as u32)
-            })
-            .filter(|(_, r, ..)| {
-                !r.is_empty() && text.is_char_boundary(r.start) && text.is_char_boundary(r.end) && !text.as_bytes()[r.clone()].contains(&b'\n')
-            })
-            .collect();
-        let break_lines = |layout: &mut Layout<Ink>| {
-            if has_indented_blocks || !pills.is_empty() {
-                break_lines_with_blocks(layout, blocks, style.size, scale, max_width);
+            let l = l.clone();
+            if self.is_joined(key) {
+                // A joined layout keeps its paragraphs, which a new width re-breaks.
+                self.touch_joined(key);
             } else {
-                layout.break_all_lines(max_width);
+                // A width change re-breaks the newest layout, not one measured since at another.
+                self.shapes.entry(shape_key).or_insert(key);
             }
+            return l;
+        }
+        let pills = pill_boxes(text, pills, style.size, scale);
+        let blocks_path = has_indented_blocks || !pills.is_empty();
+        let break_lines = |layout: &mut Layout<Ink>| {
+            break_paragraphs(layout, blocks_path, blocks, style.size, scale, max_width, 0.0);
         };
         if cache
             && let Some(prev) = self.shapes.get(&shape_key).copied()
@@ -129,8 +200,44 @@ impl TextSystem {
             self.shapes.insert(shape_key, key);
             return l;
         }
+        if cache && let Some(l) = self.layout_paragraphs(&paragraph_join::Whole {
+            text, spans, blocks, pills: &pills, style, scale, max_width, align, wrap_anywhere, base, blocks_path, shape_key, key,
+        }) {
+            return l;
+        }
         self.shaped += 1;
         let _shape_time = crate::frame::profile::Scope::new(crate::frame::profile::Phase::Text);
+        let (mut layout, _) = self.shape_text(text, spans, &pills, style, scale, wrap_anywhere, base, &break_lines, None, Exact::Local);
+        layout.align(align, AlignmentOptions::default());
+        let l = Rc::new(layout);
+        if cache {
+            self.layouts.insert(key, Entry::new(l.clone(), g, text.len(), shape_key));
+            self.shapes.insert(shape_key, key);
+        }
+        if let Some(shared) = shared {
+            self.layout_cx = shared;
+        }
+        l
+    }
+
+    /// Shapes `text` into a layout broken into lines by `break_lines` but not aligned, with
+    /// what its `trak` check found ([`Probe`]). A paragraph of a longer text passes `whole`,
+    /// what the whole text decides that paragraphs alone would decide otherwise; `exact_mode`
+    /// says what to do about runs whose font needs other spacing.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn shape_text(
+        &mut self,
+        text: &str,
+        spans: &[Span],
+        pills: &[PillBox],
+        style: TextStyle,
+        scale: f32,
+        wrap_anywhere: bool,
+        base: parley::BaseDirection,
+        break_lines: &dyn Fn(&mut Layout<Ink>),
+        whole: Option<WholeFacts>,
+        exact_mode: Exact,
+    ) -> (Layout<Ink>, Probe) {
         let mono_style = matches!(style.family, Family::Mono | Family::SystemMono);
         let tabs = if text.contains('\t') { mono_tab_stops(text, spans, mono_style) } else { Vec::new() };
         let widen = if tabs.is_empty() { Vec::new() } else { self.mono_tab_widening(&tabs, spans, style, scale) };
@@ -171,39 +278,16 @@ impl TextSystem {
         // its predicted first font's spacing; runs in another font are checked after shaping.
         let trak_tag = parley::setting::Tag::new(b"trak");
         let mut features: Vec<parley::FontFeature> = parley::FontFeature::parse_css_list(style.features).flatten().collect();
-        let tracked = features.iter().rev().find(|f| f.tag == trak_tag).is_none_or(|f| f.value != 0);
         let listed = features.len();
         features.retain(|f| f.tag != trak_tag);
         let stripped = features.len() != listed;
-        let optical = match style.optical_size {
-            OpticalSize::Fixed(o) if o.is_finite() && o > 0.0 && style.size > 0.0 => Some(o),
-            _ => None,
-        };
-        let spacing = |trak: Option<Rc<Trak>>, size: f32| {
-            let px = size * scale;
-            let points = px / scale;
-            // `o` itself at the style's size (a run's size comes back through device px).
-            let points = optical.map_or(points, |o| {
-                if (points - style.size).abs() <= style.size * 1e-6 { o } else { o * points / style.size }
-            });
-            style.tracking + trak.map_or(0.0, |t| t.spacing(px, points, tracked) / scale)
-        };
-        let base_spacing = spacing(self.primary_trak(style.family, style.weight, style.italic), style.size);
-        let span_spacing: Vec<Option<f32>> = spans
-            .iter()
-            .map(|s| {
-                if !(s.mono || s.italic || s.weight.is_some() || s.size.is_some()) {
-                    return None;
-                }
-                let family = if s.mono { Family::Mono } else { style.family };
-                let trak = self.primary_trak(family, s.weight.unwrap_or(style.weight), s.italic || style.italic);
-                Some(spacing(trak, s.size.unwrap_or(style.size))).filter(|&v| v != base_spacing)
-            })
-            .collect();
+        let spacing = tracking(style, scale);
+        let (base_spacing, span_spacing) = self.spacings(spans, style, &spacing);
         // Each style range's predicted first font at its weight, drawn at its named instance.
         let base_axes = self.primary_axes(style.family, style.weight, style.italic);
         // The strut inline code keeps inside (`inline_fit`).
-        let strut = if mono_style || !spans.iter().any(|s| s.mono) { None } else { self.primary_extents(style.family, style.weight, style.italic) };
+        let any_mono = whole.map_or_else(|| spans.iter().any(|s| s.mono), |w| w.any_mono);
+        let strut = if mono_style || !any_mono { None } else { self.primary_extents(style.family, style.weight, style.italic) };
         let span_axes: Vec<Rc<[parley::FontVariation]>> = spans
             .iter()
             .map(|s| {
@@ -270,7 +354,8 @@ impl TextSystem {
         let off = [b"liga", b"clig", b"calt", b"dlig"].map(|tag| parley::FontFeature::new(parley::setting::Tag::new(tag), 0));
         let unligated: Vec<parley::FontFeature> = features.iter().chain(&off).copied().collect();
         type Spacings = [(std::ops::Range<usize>, f32)];
-        let build = |lcx: &mut LayoutContext<Ink>, fcx: &mut FontContext, exact: &Spacings, widen: &Spacings, weights: &Spacings, fits: &Spacings, bold: &[(std::ops::Range<usize>, u16)]| {
+        let corrected0 = whole.map_or_else(|| base_spacing != 0.0 || span_spacing.iter().flatten().any(|&v| v != 0.0), |w| w.corrected);
+        let build = |lcx: &mut LayoutContext<Ink>, fcx: &mut FontContext, exact: &Spacings, exact_nonzero: bool, widen: &Spacings, weights: &Spacings, fits: &Spacings, bold: &[(std::ops::Range<usize>, u16)]| {
             let mut b = lcx.ranged_builder(fcx, text, scale, true);
             b.set_base_direction(base);
             // Lines break where Chromium breaks them: after every run of spaces, even before a
@@ -286,7 +371,7 @@ impl TextSystem {
             }
             // Parley turns optional ligatures off under letter spacing; Core Text's tracking
             // keeps them, so spacing that only corrects `trak` turns them back on.
-            let corrected = base_spacing != 0.0 || span_spacing.iter().flatten().chain(exact.iter().map(|e| &e.1)).any(|&v| v != 0.0);
+            let corrected = corrected0 || exact_nonzero;
             if mono_style {
                 b.push_default(StyleProperty::FontFeatures(unligated.as_slice().into()));
             } else if style.tracking == 0.0 && corrected {
@@ -369,10 +454,10 @@ impl TextSystem {
             // Boxes before and after a pill's label make room for its chip. The label may break
             // like any text; `break_lines_with_blocks` moves a split pill whole to the next line
             // and lets it wrap only when it is wider than a line, as a browser wraps a span.
-            for (i, r, lead, trail) in &pills {
-                for (side, index, width) in [(0, r.start, *lead), (1, r.end, *trail)] {
+            for &PillBox { index: i, range: ref r, lead, trail } in pills {
+                for (side, index, width) in [(0, r.start, lead), (1, r.end, trail)] {
                     b.push_inline_box(parley::InlineBox {
-                        id: PILL_BOX | (*i as u64) << 1 | side,
+                        id: PILL_BOX | (i as u64) << 1 | side,
                         kind: parley::InlineBoxKind::InFlow,
                         index,
                         width: width as f32,
@@ -386,9 +471,9 @@ impl TextSystem {
             break_lines(&mut layout);
             layout
         };
-        let mut layout = build(&mut self.layout_cx, &mut self.font_cx, &[], &widen, &[], &[], &[]);
+        let mut layout = build(&mut self.layout_cx, &mut self.font_cx, &[], false, &widen, &[], &[], &[]);
         // On Windows, system faces as DirectWrite picks them for each run's weight, as Chromium.
-        let system = cfg!(target_os = "windows") && !text.is_ascii();
+        let system = cfg!(target_os = "windows") && whole.map_or_else(|| !text.is_ascii(), |w| w.non_ascii);
         let wanted = |at: usize| spans.iter().rev().find_map(|s| s.weight.filter(|_| span_range(s).contains(&at))).unwrap_or(style.weight);
         let weights = if system {
             system_weight::corrections(&mut self.system_faces, &mut self.font_cx, &self.font_files, &layout, wanted)
@@ -396,10 +481,10 @@ impl TextSystem {
             Vec::new()
         };
         if !weights.is_empty() {
-            layout = build(&mut self.layout_cx, &mut self.font_cx, &[], &widen, &weights, &[], &[]);
+            layout = build(&mut self.layout_cx, &mut self.font_cx, &[], false, &widen, &weights, &[], &[]);
         }
         // Inline code keeps inside the line box its text sets, as a browser's does.
-        let fits = strut.map_or_else(Vec::new, |strut| inline_fit::mono_fits(&layout, text, spans, style, scale, strut));
+        let fits = strut.map_or_else(Vec::new, |strut| inline_fit::mono_fits(&layout, text, spans, any_mono, style, scale, strut));
         // Bold asked of a system face with no bold draws synthetic bold, as Chromium's does.
         let bolds = cfg!(target_os = "windows") && (style.weight >= 600.0 || spans.iter().any(|s| s.weight.is_some_and(|w| w >= 600.0)));
         let bold = if bolds {
@@ -408,7 +493,7 @@ impl TextSystem {
             Vec::new()
         };
         if !fits.is_empty() || !bold.is_empty() {
-            layout = build(&mut self.layout_cx, &mut self.font_cx, &[], &widen, &weights, &fits, &bold);
+            layout = build(&mut self.layout_cx, &mut self.font_cx, &[], false, &widen, &weights, &fits, &bold);
         }
         // The spacing each run got, against the spacing its own font needs.
         let given = |at: usize| {
@@ -432,19 +517,44 @@ impl TextSystem {
                 }
             }
         }
-        if mismatch {
-            layout = build(&mut self.layout_cx, &mut self.font_cx, &exact, &widen, &weights, &fits, &bold);
+        let probe = Probe { mismatch, exact_nonzero: exact.iter().any(|e| e.1 != 0.0) };
+        let rebuild = match exact_mode {
+            Exact::Local => mismatch.then_some(probe.exact_nonzero),
+            Exact::Probe => None,
+            Exact::Force { nonzero } => Some(nonzero),
+        };
+        if let Some(nonzero) = rebuild {
+            layout = build(&mut self.layout_cx, &mut self.font_cx, &exact, nonzero, &widen, &weights, &fits, &bold);
         }
-        layout.align(align, AlignmentOptions::default());
-        let l = Rc::new(layout);
-        if cache {
-            self.layouts.insert(key, Entry::new(l.clone(), g, text.len(), shape_key));
-            self.shapes.insert(shape_key, key);
+        (layout, probe)
+    }
+
+    /// The letter spacing of `style` (its tracking and its first font's `trak`), and of each
+    /// span that may shape in another font where it differs.
+    fn spacings(&mut self, spans: &[Span], style: TextStyle, spacing: &dyn Fn(Option<Rc<Trak>>, f32) -> f32) -> (f32, Vec<Option<f32>>) {
+        let base_spacing = spacing(self.primary_trak(style.family, style.weight, style.italic), style.size);
+        let span_spacing = spans
+            .iter()
+            .map(|s| {
+                if !(s.mono || s.italic || s.weight.is_some() || s.size.is_some()) {
+                    return None;
+                }
+                let family = if s.mono { Family::Mono } else { style.family };
+                let trak = self.primary_trak(family, s.weight.unwrap_or(style.weight), s.italic || style.italic);
+                Some(spacing(trak, s.size.unwrap_or(style.size))).filter(|&v| v != base_spacing)
+            })
+            .collect();
+        (base_spacing, span_spacing)
+    }
+
+    /// What [`Self::shape_text`] decides from the whole of `text` (see [`WholeFacts`]).
+    pub(super) fn whole_facts(&mut self, text: &str, spans: &[Span], style: TextStyle, scale: f32) -> WholeFacts {
+        let (base, span) = self.spacings(spans, style, &tracking(style, scale));
+        WholeFacts {
+            corrected: base != 0.0 || span.iter().flatten().any(|&v| v != 0.0),
+            any_mono: spans.iter().any(|s| s.mono),
+            non_ascii: !text.is_ascii(),
         }
-        if let Some(shared) = shared {
-            self.layout_cx = shared;
-        }
-        l
     }
 
     fn mono_tab_widening(

@@ -63,9 +63,11 @@ mod measure;
 pub(crate) mod outline;
 pub use outline::Outline;
 mod pill_chips;
+mod paragraph_join;
 mod rich_layout;
 mod run;
 mod shape;
+use shape::{Exact, PillBox, Probe};
 pub(crate) use pill_chips::{bare_icons, pill_chips};
 mod support;
 pub use support::SmoothingSupport;
@@ -114,7 +116,7 @@ use atlas::{AtlasGlyph, COLOR_GLYPH_BUDGET, ColorGlyph, GlyphKey, GlyphMap, Rast
 use atlas::{MAX_OVERFLOW_PAGES, MAX_STEADY_PAGES};
 #[cfg(test)]
 pub(crate) use glyph_emit::GLIDE_PHASES;
-use line_break::break_lines_with_blocks;
+use line_break::break_paragraphs;
 use span::PILL_BOX;
 use system_fonts::{
     LoadedFiles, SYMBOL_FAMILIES, SYMBOL_FONT_FILES, family_list, load_families, load_installed, load_system_mono, named_list, names_system_mono,
@@ -158,6 +160,8 @@ pub struct TextSystem {
     superseded: FxHashSet<u64>,
     elisions: Cache<CachedElision>,
     runs: Cache<Rc<RunLayout>>,
+    /// Long texts' paragraph layouts, which their joined layouts in `layouts` are made of.
+    paragraphs: paragraph_join::Paragraphs,
     generation: u32,
     /// The slots' families as named; `sans` and `mono` are the lists text asks for.
     families: (String, String),
@@ -265,6 +269,7 @@ impl TextSystem {
             superseded: Default::default(),
             elisions: Default::default(),
             runs: Default::default(),
+            paragraphs: paragraph_join::Paragraphs::new(),
             generation: 0,
             families: (families.0.to_owned(), families.1.to_owned()),
             chosen: 0,

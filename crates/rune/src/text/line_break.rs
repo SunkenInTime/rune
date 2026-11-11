@@ -2,14 +2,38 @@
 
 use super::*;
 
+/// Breaks `layout` into lines as [`TextSystem::layout_keyed`] does, with block indents and
+/// pills when `blocks_path` and plainly otherwise, its first line's top at `y` (a paragraph of a
+/// longer text starts where the paragraphs before it end).
+pub(super) fn break_paragraphs(
+    layout: &mut Layout<Ink>,
+    blocks_path: bool,
+    blocks: &[crate::edit::Block],
+    font_size: f32,
+    scale: f32,
+    max_width: Option<f32>,
+    y: f64,
+) {
+    if blocks_path {
+        break_lines_with_blocks(layout, blocks, font_size, scale, max_width, y);
+    } else if y == 0.0 {
+        layout.break_all_lines(max_width);
+    } else {
+        let mut breaker = layout.break_lines();
+        breaker.state_mut().set_line_y(y);
+        breaker.break_remaining(max_width.unwrap_or(f32::MAX));
+    }
+}
+
 /// Breaks `layout` into lines, each paragraph indented by its block. A pill's chip that would
 /// end a line apart from its label, or run past the line's end, moves to the next line.
-pub(super) fn break_lines_with_blocks(
+fn break_lines_with_blocks(
     layout: &mut Layout<Ink>,
     blocks: &[crate::edit::Block],
     font_size: f32,
     scale: f32,
     max_width: Option<f32>,
+    y: f64,
 ) {
     let pills = layout.inline_boxes().filter(|b| b.id & PILL_BOX != 0).count() / 2;
     // `(para_idx, line_in_para)` and the room it gets instead: less to break before a chip, or
@@ -18,7 +42,7 @@ pub(super) fn break_lines_with_blocks(
     let mut caps: Vec<((usize, usize), f32)> = Vec::new();
     let mut lines_meta = Vec::new();
     for _ in 0..=2 * pills {
-        break_lines_capped(layout, blocks, font_size, scale, max_width, &caps, &mut lines_meta);
+        break_lines_capped(layout, blocks, font_size, scale, max_width, y, &caps, &mut lines_meta);
         if max_width.is_none() || pills == 0 || !collect_misplaced_pills(layout, &lines_meta, &mut caps) {
             return;
         }
@@ -33,12 +57,16 @@ fn break_lines_capped(
     font_size: f32,
     scale: f32,
     max_width: Option<f32>,
+    y: f64,
     caps: &[((usize, usize), f32)],
     out: &mut Vec<((usize, usize), f32)>,
 ) {
     out.clear();
     let layout_max = max_width.unwrap_or(f32::MAX);
     let mut breaker = layout.break_lines();
+    if y != 0.0 {
+        breaker.state_mut().set_line_y(y);
+    }
     breaker.state_mut().set_layout_max_advance(layout_max);
     let (mut para_idx, mut line_in_para) = (0usize, 0usize);
     while !breaker.is_done() {

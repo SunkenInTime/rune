@@ -78,6 +78,7 @@ impl TextSystem {
         self.superseded.clear();
         self.elisions.clear();
         self.runs.clear();
+        self.paragraphs.clear();
         self.primary_traks.clear();
         self.primary_axes.clear();
         self.glyph_cache.clear();
