@@ -74,7 +74,8 @@ taffy = { version = "0.15", default-features = false, features = ["std", "taffy_
 # `complex-scripts`: ICU4X's word and line dictionaries, as a browser's ICU has them. Chinese and
 # Japanese words (2.0 MB) and Thai, Lao, Khmer and Burmese words and line breaks (1.8 MB); without
 # them a Thai phrase never wraps and every CJK line logs a missing segmentation model.
-parley = { version = "0.12", default-features = false, features = ["std", "complex-scripts"] }
+# Parley with `Layout::join_part` and `ShapedText::append` added (see vendor/README.md).
+parley = { version = "0.12", path = "../../vendor/parley", default-features = false, features = ["std", "complex-scripts"] }
 swash = "0.2.10"
 skrifa = "0.44"
 bytemuck = { version = "1.25", features = ["derive"] }

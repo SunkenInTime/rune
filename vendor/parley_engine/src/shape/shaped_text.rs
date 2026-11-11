@@ -218,6 +218,57 @@ impl ShapedText {
         }
     }
 
+    /// Appends `other`, the shaping of a text that follows this one at byte `byte_offset` and
+    /// character `char_offset`, as if both had been shaped as one text. Its style indices map
+    /// through `style_map` (`style_map[local] = joined`); equal fonts are shared.
+    ///
+    /// Added for Rune's per-paragraph layout (see `vendor/README.md`).
+    #[allow(clippy::cast_possible_truncation, reason = "indices stay within u32 like Parley's own")]
+    pub fn append(&mut self, other: &Self, byte_offset: usize, char_offset: usize, style_map: &[u16]) {
+        let characters = self.characters.len() as u32;
+        let clusters = self.shaped_clusters.len() as u32;
+        let glyphs = self.glyphs.len();
+        let coords = self.normalized_coords.len();
+        let fonts: Vec<usize> = other
+            .fonts
+            .iter()
+            .map(|font| {
+                self.fonts.iter().position(|f| f == font).unwrap_or_else(|| {
+                    self.fonts.push(font.clone());
+                    self.fonts.len() - 1
+                })
+            })
+            .collect();
+        self.runs.extend(other.runs.iter().map(|run| {
+            let r = &run.range;
+            ShapedRun {
+                range: TextRange {
+                    byte_range: r.byte_range.start + byte_offset..r.byte_range.end + byte_offset,
+                    char_range: r.char_range.start + char_offset..r.char_range.end + char_offset,
+                },
+                font_index: fonts[run.font_index],
+                characters_range: run.characters_range.start + characters..run.characters_range.end + characters,
+                shaped_clusters_range: run.shaped_clusters_range.start + clusters..run.shaped_clusters_range.end + clusters,
+                glyphs_range: run.glyphs_range.start + glyphs..run.glyphs_range.end + glyphs,
+                normalized_coords_range: run.normalized_coords_range.start + coords..run.normalized_coords_range.end + coords,
+                ..run.clone()
+            }
+        }));
+        self.characters.extend(other.characters.iter().map(|c| Character {
+            text_byte_start: c.text_byte_start + byte_offset as u32,
+            style_index: style_map[c.style_index as usize],
+            ..*c
+        }));
+        self.shaped_clusters.extend(other.shaped_clusters.iter().map(|c| ShapedCluster {
+            chars_range: (c.chars_range.0 + characters, c.chars_range.1 + characters),
+            style_index: style_map[c.style_index as usize],
+            glyph_offset: if c.has_inline_glyph() { c.glyph_offset } else { c.glyph_offset + glyphs as u32 },
+            ..*c
+        }));
+        self.glyphs.extend_from_slice(&other.glyphs);
+        self.normalized_coords.extend_from_slice(&other.normalized_coords);
+    }
+
     /// The character data of the text, in logical order.
     ///
     /// [`ShapedRun::characters_range`] indexes into this. The nth [`Character`] corresponds exactly

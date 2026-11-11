@@ -54,7 +54,7 @@ members = [
     "examples/site-scenes",
     "examples/luau-panel",
 ]
-exclude = ["tools/rune-dev-guard"]
+exclude = ["tools/rune-dev-guard", "vendor"]
 
 [workspace.package]
 edition = "2024"
