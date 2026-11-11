@@ -43,7 +43,7 @@ fn break_lines_capped(
     let (mut para_idx, mut line_in_para) = (0usize, 0usize);
     while !breaker.is_done() {
         let blk = blocks.get(para_idx).copied().unwrap_or(crate::edit::Block::Paragraph);
-        let indent = (blk.indent_pt(font_size) * scale).round();
+        let indent = (blk.line_indent_pt(font_size, line_in_para == 0) * scale).round();
         let right_pad = if blk == crate::edit::Block::Code { indent } else { 0.0 };
         let line_max = max_width
             .map_or(f32::MAX, |w| (w - indent - right_pad).max(1.0))
@@ -58,6 +58,12 @@ fn break_lines_capped(
         match breaker.break_next() {
             Some(parley::YieldData::LineBreak(data)) => {
                 if data.reason == parley::BreakReason::Explicit {
+                    // Room under the paragraph, whole device px so later lines stay on the grid.
+                    let after = (blk.space_after_pt() * scale).round() as f64;
+                    if after > 0.0 {
+                        let y = breaker.state().line_y();
+                        breaker.state_mut().set_line_y(y + after);
+                    }
                     para_idx += 1;
                     line_in_para = 0;
                 } else {

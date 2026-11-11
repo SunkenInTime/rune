@@ -114,7 +114,7 @@ pub(super) fn emit_block_decorations(
                         markers.push((indent, baseline, blk, list_counts[l]));
                     }
                 }
-                Block::Paragraph | Block::Quote | Block::Code => {
+                Block::Paragraph | Block::Quote | Block::Code | Block::Hang { .. } => {
                     if !is_soft {
                         list_counts = [0; (MAX_LIST_LEVEL as usize) + 1];
                     }
@@ -147,7 +147,7 @@ pub(super) fn emit_block_decorations(
                 let indent = (blk.indent_pt(spec.style.size) * s).round();
                 markers.push((indent, baseline, blk, 1));
             }
-            Block::Paragraph => {}
+            Block::Paragraph | Block::Hang { .. } => {}
         }
     }
 
@@ -215,6 +215,10 @@ pub(super) fn input_caret(n: &Node, r: [f32; 4], scale: f32, s: f32, gliding: bo
     } else {
         (cx, (1.5 * s * scale).max(1.0))
     };
+    if let Some((cw, ch)) = input.caret_size {
+        let (w, hh) = ((cw * s * scale).round().max(1.0), (ch * s * scale).round().min(h));
+        return Some(([caret_x, cy + ((h - hh) * 0.5).round(), w, hh], [cx / s, cy / s, cw * scale, h / s]));
+    }
     Some(([caret_x, cy + h * 0.1, caret_w, h * 0.8], [cx / s, cy / s, 2.0 * scale, h / s]))
 }
 

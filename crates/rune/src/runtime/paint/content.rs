@@ -520,7 +520,8 @@ impl<S: 'static> Runtime<S> {
                 *glyph_count += 1;
             }
             if let (Some(c), Some(inp)) = (caret, &n.input) {
-                self.instances.push(rect_inst(c, premul(inp.caret, o, srgb), 0.0, clip, fade));
+                let radius = if inp.caret_size.is_some() { s.min(c[2] * 0.5) } else { 0.0 };
+                self.instances.push(rect_inst(c, premul(inp.caret, o, srgb), radius, clip, fade));
             }
             self.text.set_emit(crate::text::outline::Emit::Atlas);
         }

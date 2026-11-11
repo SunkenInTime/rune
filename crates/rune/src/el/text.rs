@@ -74,6 +74,35 @@ impl El {
         }
         self
     }
+    /// On a [`text_input`]: the [`Block`](crate::Block) each paragraph lays out and draws as
+    /// this frame, by paragraph index, in place of the edit's own blocks (paragraphs past the
+    /// end are plain). For an editor whose source text carries its own structure, such as
+    /// Markdown, where the app works out each line's indent ([`Block::hang`](crate::Block::hang))
+    /// and the edit keeps none. Editing keys still follow the edit's own blocks.
+    pub fn paragraph_blocks(mut self, blocks: impl Into<Vec<crate::Block>>) -> Self {
+        if let Some(inp) = self.cold.get_mut_if_some().and_then(|c| c.input.as_deref_mut()) {
+            inp.paragraph_blocks = blocks.into();
+            self.sync_input_rich();
+        }
+        self
+    }
+    /// On a [`text_input`]: a caret `width` points wide and `height` points tall with rounded
+    /// ends, centred on its line (never taller than the line), in place of the default hairline.
+    pub fn caret_size(mut self, width: f32, height: f32) -> Self {
+        if let Some(inp) = self.cold.get_mut_if_some().and_then(|c| c.input.as_deref_mut()) {
+            inp.caret_size = Some((width.max(1.0), height.max(1.0)));
+        }
+        self
+    }
+    /// On a [`text_input`]: byte ranges of `edit.text` drawn struck through, each in `color` or
+    /// in its text's own when `None`, beside any the edit's marks strike.
+    pub fn input_strikes(mut self, ranges: impl IntoIterator<Item = (usize, usize, Option<Color>)>) -> Self {
+        if let Some(inp) = self.cold.get_mut_if_some().and_then(|c| c.input.as_deref_mut()) {
+            inp.strike_decorations = ranges.into_iter().map(|(a, b, c)| (a as u32, b as u32, c)).collect();
+            self.sync_input_rich();
+        }
+        self
+    }
     /// Alias for [`El::spans`]: per-frame syntax or highlight [`Span`]s painted over text
     /// (for example `SyntaxTheme::from_kit(&kit).spans(&highlights, code_offset)`).
     pub fn decorations(self, spans: impl Into<Vec<Span>>) -> Self {
@@ -220,7 +249,7 @@ impl El {
     pub(crate) fn sync_input_rich(&mut self) {
         let (Some(inp), Some(t)) = (&self.cold.input, &mut self.text) else { return };
         t.rich_style = inp.rich_style;
-        if inp.edit.is_plain() && inp.decorations.is_empty() {
+        if inp.edit.is_plain() && inp.decorations.is_empty() && inp.paragraph_blocks.is_empty() && inp.strike_decorations.is_empty() {
             // A plain field lays out and draws exactly as before rich editing existed.
             t.spans.clear();
             t.strikes.clear();
@@ -229,8 +258,16 @@ impl El {
             t.pills.clear();
             return;
         }
-        let (mut base_spans, strikes, rich_links, blocks) =
+        let (mut base_spans, mut strikes, rich_links, mut blocks) =
             inp.edit.rich_display_specs(t.style, inp.rich_style);
+        if !inp.paragraph_blocks.is_empty() {
+            for (i, b) in blocks.iter_mut().enumerate() {
+                *b = inp.paragraph_blocks.get(i).copied().unwrap_or(crate::edit::Block::Paragraph);
+            }
+        }
+        for &(a, b, color) in &inp.strike_decorations {
+            strikes.extend(inp.edit.map_range_to_display(a as usize, b as usize).into_iter().map(|(s, e)| (s, e, color)));
+        }
         for d in &inp.decorations {
             for (ds, de) in inp.edit.map_range_to_display(d.start as usize, d.end as usize) {
                 let mut sp = d.clone();

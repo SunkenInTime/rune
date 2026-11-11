@@ -20,6 +20,12 @@ pub struct InputSpec {
     pub(crate) caret_inked: bool,
     pub(crate) revealed_override: Option<bool>,
     pub(crate) decorations: Vec<Span>,
+    /// [`El::caret_size`]: the caret's width and height in points, in place of 1.5 pt by 80% of the line.
+    pub(crate) caret_size: Option<(f32, f32)>,
+    /// [`El::paragraph_blocks`]: the block each paragraph lays out as, over the edit's own.
+    pub(crate) paragraph_blocks: Vec<crate::edit::Block>,
+    /// [`El::input_strikes`]: struck-through byte ranges of `edit.text`, with their line's colour.
+    pub(crate) strike_decorations: Vec<(u32, u32, Option<Color>)>,
     pub(crate) rich_style: crate::edit::RichStyle,
     pub(crate) pill_icon: Option<PillIconFn>,
     pub(crate) pill_style: Option<PillStyleFn>,
@@ -80,6 +86,9 @@ pub fn text_input(edit: &TextEdit, style: TextStyle) -> El {
         caret_inked: false,
         revealed_override: None,
         decorations: Vec::new(),
+        caret_size: None,
+        paragraph_blocks: Vec::new(),
+        strike_decorations: Vec::new(),
         rich_style: crate::edit::RichStyle::default(),
         pill_icon: None,
         pill_style: None,

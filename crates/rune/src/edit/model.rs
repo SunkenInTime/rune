@@ -105,9 +105,37 @@ pub enum Block {
     Quote,
     /// Monospace code block line with a background fill; inline marks do not apply.
     Code,
+    /// A paragraph the app indents itself, in quarter points: `first` for its first line, `rest`
+    /// for the lines it wraps onto, and `after` of empty space under its last line (room for a
+    /// picture the app draws there). It draws no marker and edits as a [`Block::Paragraph`].
+    /// Build one with [`Block::hang`].
+    Hang { first: u16, rest: u16, after: u16 },
 }
 
 impl Block {
+    /// A [`Block::Hang`] from points: the first line's indent, the wrapped lines' indent and
+    /// the space under the paragraph. Each is kept to a quarter point.
+    pub fn hang(first: f32, rest: f32, after: f32) -> Block {
+        let q = |v: f32| (v.max(0.0) * 4.0).round().min(u16::MAX as f32) as u16;
+        Block::Hang { first: q(first), rest: q(rest), after: q(after) }
+    }
+
+    /// Left indent in points of a line of this block: its first line, or one it wraps onto.
+    pub(crate) fn line_indent_pt(self, font_size: f32, first_line: bool) -> f32 {
+        match self {
+            Block::Hang { first, .. } if first_line => first as f32 / 4.0,
+            other => other.indent_pt(font_size),
+        }
+    }
+
+    /// Empty space in points under this block's last line.
+    pub(crate) fn space_after_pt(self) -> f32 {
+        match self {
+            Block::Hang { after, .. } => after as f32 / 4.0,
+            _ => 0.0,
+        }
+    }
+
     pub fn is_list(self) -> bool {
         matches!(self, Block::Bullet(_) | Block::Numbered(_))
     }
@@ -137,13 +165,14 @@ impl Block {
                 | (Block::Numbered(_), Block::Numbered(_))
                 | (Block::Quote, Block::Quote)
                 | (Block::Code, Block::Code)
+                | (Block::Hang { .. }, Block::Hang { .. })
         )
     }
 
     /// This block's kind as one bit, for [`TextEdit::allow_blocks`].
     pub(super) fn kind_bit(self) -> u8 {
         1 << match self {
-            Block::Paragraph => 0,
+            Block::Paragraph | Block::Hang { .. } => 0,
             Block::Bullet(_) => 1,
             Block::Numbered(_) => 2,
             Block::Quote => 3,
@@ -159,6 +188,7 @@ impl Block {
             Block::Bullet(l) | Block::Numbered(l) => unit * (l.min(MAX_LIST_LEVEL) as f32 + 1.0),
             Block::Quote => (font_size * 1.1).round().max(14.0),
             Block::Code => (font_size * 0.75).round().max(10.0),
+            Block::Hang { rest, .. } => rest as f32 / 4.0,
         }
     }
 }
