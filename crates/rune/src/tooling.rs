@@ -320,6 +320,8 @@ pub(crate) enum Kind {
     PopupMenu(Option<String>),
     /// Answers the open file dialog: the chosen path, or `None` to cancel it.
     FileDialog(Option<PathBuf>),
+    /// Answers the open file dialog with several files (`"paths"`); empty cancels it.
+    FileDialogPaths(Vec<PathBuf>),
     Physical(crate::PhysicalInput),
     /// A registered global shortcut, delivered only to its handler.
     Shortcut(crate::Shortcut),
@@ -430,6 +432,7 @@ impl Ev {
             Kind::Menu(item) => ScriptEvent::Menu(item.clone()),
             Kind::PopupMenu(picked) => ScriptEvent::PopupMenu(picked.clone()),
             Kind::FileDialog(path) => ScriptEvent::FileDialog(path.clone()),
+            Kind::FileDialogPaths(paths) => ScriptEvent::FileDialogPaths(paths.clone()),
             Kind::Physical(input) => ScriptEvent::Physical(*input),
             Kind::Shortcut(chord) => ScriptEvent::Shortcut(chord.clone()),
             Kind::Move => pointer(PointerAction::Move),

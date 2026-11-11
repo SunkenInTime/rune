@@ -81,7 +81,7 @@ impl Member for Fake {
     fn popup_open(&self) -> bool { false }
     fn resolve_popup(&mut self, _: Option<&str>) -> Result<(), crate::PopupMenuError> { Ok(()) }
     fn file_dialog_open(&self) -> bool { false }
-    fn resolve_file_dialog(&mut self, _: Option<std::path::PathBuf>) -> Result<(), crate::FileDialogError> { Ok(()) }
+    fn resolve_file_dialog(&mut self, _: Vec<std::path::PathBuf>) -> Result<(), crate::FileDialogError> { Ok(()) }
     fn render(&mut self, _: &Gpu, _: &Slot, _: (u32, u32), _: f64, _: f64) {}
     fn backdrop_dark(&self) -> Option<bool> { None }
     fn tree(&self, _: f64) -> serde_json::Value { serde_json::Value::Null }

@@ -140,6 +140,7 @@ pub use el::text_input;
 pub use file_dialog::FileDialogError;
 pub use file_dialog::FileDialogKind;
 pub use file_dialog::FileDialogOptions;
+pub use file_dialog::FileDialogPaths;
 pub use file_dialog::FileDialogResult;
 pub use file_dialog::FileDialogs;
 pub use file_dialog::ScriptedFileDialog;

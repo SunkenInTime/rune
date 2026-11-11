@@ -1618,6 +1618,16 @@ Or ask from a handler, with no executor or waker to wire up:
   the same for a Save dialog, and `tx.open_folder` for an Open dialog that picks a folder
   (`FileDialogKind::Folder`, `"kind": "folder"` in `--tree`; filters and file name don't apply;
   the portal's `directory` chooser on Linux).
+- `tx.open_files(options, |s, result, tx| ..)` is an Open dialog that picks several files
+  (Shift- and Cmd/Ctrl-click in the dialog): `result` is `Ok(paths)` with every chosen file in
+  the dialog's order, an empty list when the user cancels, or the same errors as `open_file`.
+  rfd's `pick_files` shows it on macOS and Windows and the portal's `multiple` option on Linux;
+  `FileDialogs::open_files(options).await` is the executor form. `--tree` shows it as an
+  `open` dialog with `"multiple": true`; a script answers it with `{"type": "file-dialog",
+  "paths": ["/a.png", "/b.png"]}` (a `"path"` answers it with one file), and tests with
+  `Runtime::resolve_file_dialog_paths(paths)` (`Runtime::file_dialog_multiple()` tells which
+  dialog is open). A one-file dialog refuses several paths. Scripted fixtures answer it from
+  an `Open` `ScriptedFileDialog` (one path) or `FileDialogs::scripted(..).with_files(paths)`.
 - One dialog at a time: asked for while one is open, the callback gets an error at once and
   the open dialog stays. Asked for in the same turn that shows a hidden window, it shows with
   the window; asked for on a window that stays hidden, or on an overlay, the callback gets an

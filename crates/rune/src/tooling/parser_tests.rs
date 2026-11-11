@@ -40,6 +40,18 @@ fn script_events_answer_a_file_dialog() {
 }
 
 #[test]
+fn script_events_answer_a_file_dialog_with_several_paths() {
+    let events = parse_script(json!([{"t": 0.1, "type": "file-dialog", "paths": ["/a.png", "/b 录.png"]}, {"t": 0.2, "type": "file-dialog", "paths": []}]));
+    let kinds: Vec<_> = events.into_iter().map(|e| {
+        let ScriptEvent::FileDialogPaths(public) = e.public().event else { panic!("public event lost the dialog answer") };
+        let Kind::FileDialogPaths(paths) = e.kind else { panic!("parsed as another event") };
+        assert_eq!(public, paths);
+        paths
+    }).collect();
+    assert_eq!(kinds, [vec![PathBuf::from("/a.png"), PathBuf::from("/b 录.png")], vec![]]);
+}
+
+#[test]
 fn script_events_answer_a_pop_up_menu() {
     let kinds: Vec<_> = parse_script(json!([{"t": 0.2, "type": "menu-cancel"}, {"t": 0.1, "type": "menu-pick", "id": "dark"}]))
         .into_iter().map(|e| {

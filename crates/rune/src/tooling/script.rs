@@ -224,8 +224,13 @@ pub(crate) fn parse_script(list: Value) -> Vec<Ev> {
                 out.push(Ev { t, kind: Kind::PopupMenu(Some(id.into())), pos: Pos::Rel(0.0, 0.0) });
             }
             "menu-cancel" => out.push(Ev { t, kind: Kind::PopupMenu(None), pos: Pos::Rel(0.0, 0.0) }),
+            "file-dialog" if e.get("paths").is_some() => {
+                let paths = e["paths"].as_array().and_then(|a| a.iter().map(|p| p.as_str().map(PathBuf::from)).collect::<Option<Vec<_>>>())
+                    .unwrap_or_else(|| die("file-dialog \"paths\" must be a list of strings"));
+                out.push(Ev { t, kind: Kind::FileDialogPaths(paths), pos: Pos::Rel(0.0, 0.0) });
+            }
             "file-dialog" => {
-                let path = e["path"].as_str().unwrap_or_else(|| die("file-dialog needs a \"path\" (file-dialog-cancel cancels)"));
+                let path = e["path"].as_str().unwrap_or_else(|| die("file-dialog needs a \"path\" or \"paths\" (file-dialog-cancel cancels)"));
                 out.push(Ev { t, kind: Kind::FileDialog(Some(path.into())), pos: Pos::Rel(0.0, 0.0) });
             }
             "file-dialog-cancel" => out.push(Ev { t, kind: Kind::FileDialog(None), pos: Pos::Rel(0.0, 0.0) }),
