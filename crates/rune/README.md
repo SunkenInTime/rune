@@ -1814,6 +1814,26 @@ row().key("theme").child(text(theme_title(&s.theme)))
   right after the menu closes lands where the pointer is, moved or not. Elsewhere
   `popup_menu_supported()` is false and `on_pick` gets `None` on the next frame, so keep an
   in-app fallback for those platforms. `cargo run -p rune --example popup_menu` shows both kinds.
+- **A text field's own menu**: a right-click (control-click, the Menu key, Shift+F10) on a
+  `text_input` without `on_secondary_press` opens Rune's menu for it: a misspelled word's
+  suggestions and Learn Spelling, then Cut, Copy, Paste and, off macOS, Select All, then the
+  app's Spellcheck items (`El::on_spellcheck`). `El::input_menu(items, on_pick)` on the field or
+  around it puts the app's items first, with a separator before Rune's, so an editor keeps the
+  spelling suggestions while adding its own (`on_secondary_press` replaces the whole menu).
+  `items(s, offset)` builds a `PopupMenu` each time the menu opens, for the text offset under the
+  click (the caret's from the keyboard), after the click moved the caret or kept the selection;
+  `on_pick(s, id, offset, tx)` hears a pick of one of them. Ids mustn't repeat Rune's (`cut`,
+  `copy`, `paste`, `select-all`, `learn-spelling`, `no-guesses`, `spellcheck`, `suggestion-N`,
+  `language-*`), or the menu doesn't open. Where `popup_menu_supported()` is false (Linux, the
+  web) no field menu opens, with app items or without; an app that wants one there draws it from
+  `on_secondary_press_local`, whose `PointerEvent::text_offset` is the click's offset.
+
+  ```rust
+  text_input(&s.edit, style).on_edit(|s: &mut Doc| &mut s.edit).input_menu(
+      |s: &mut Doc, _at| PopupMenu::new().item(PopupItem::new("comment", "Add Comment").enabled(s.edit.range().0 != s.edit.range().1)),
+      |s: &mut Doc, id, at, _| if id == "comment" { s.add_comment(at) },
+  )
+  ```
 - **Headless**: `--tree` has a `popupMenu` object (items, anchor, `selected`, `queued`) while a
   menu is open, and `--trace` notes `popup-menu:open`, `popup-menu:pick:{id}` and
   `popup-menu:cancel`. Scripts answer it with `{"type": "menu-pick", "id": "dark"}` or

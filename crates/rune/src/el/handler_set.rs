@@ -2,7 +2,7 @@
 //! `Cold<Handlers>`, so elements without callbacks pay one pointer.
 use crate::cold::Empty;
 use crate::el::{
-    AtBottomFn, Cursor, DragEndFn, DragFn, DragOutFn, DropSpec, LanguagesFn, LayoutFn, LayoutTxFn, ModalSpec,
+    AtBottomFn, Cursor, DragEndFn, DragFn, DragOutFn, DropSpec, InputMenu, LanguagesFn, LayoutFn, LayoutTxFn, ModalSpec,
     PasteFn, PointerFn, PressFn, ScrollOffsetFn, SelectionChangeFn, SelectionCopy, VisibleRowsFn,
     WindowFocusFn,
 };
@@ -15,6 +15,8 @@ pub(crate) struct Handlers {
     pub on_spellcheck: Option<(bool, WindowFocusFn)>,
     /// `El::on_spellcheck_languages`: keeps the dictionaries a field's menu chose.
     pub on_spellcheck_languages: Option<LanguagesFn>,
+    /// `El::input_menu`: the app's items in a field's menu.
+    pub input_menu: Option<InputMenu>,
     pub modal: Option<ModalSpec>,
     pub on_press: Option<PressFn>,
     pub on_double_press: Option<PressFn>,
@@ -101,6 +103,7 @@ impl Empty for Handlers {
         on_window_focus: None,
         on_spellcheck: None,
         on_spellcheck_languages: None,
+        input_menu: None,
         modal: None,
         on_press: None,
         on_double_press: None,
