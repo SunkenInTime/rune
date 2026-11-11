@@ -149,8 +149,24 @@ fn default_languages(available: &[String], preferred: &[String]) -> Vec<String> 
 /// The current generation, for a thread's checkers to know when to start over.
 pub(crate) fn generation() -> u64 { GENERATION.load(Ordering::Relaxed) }
 
-/// The byte ranges of `text`'s misspelled words, checked once per text.
+/// The byte ranges of `text`'s misspelled words. A long text is checked a paragraph at a time,
+/// each paragraph once, so typing in a long document checks only the paragraph being typed in
+/// rather than the whole document on every key.
 pub(crate) fn misspelled(text: &str) -> Ranges {
+    if text.len() < 512 || !text.contains('\n') {
+        return misspelled_whole(text);
+    }
+    let mut found = Vec::new();
+    let mut start = 0;
+    for paragraph in text.split('\n') {
+        found.extend(misspelled_whole(paragraph).iter().map(|&(a, b)| (a + start, b + start)));
+        start += paragraph.len() + 1;
+    }
+    Rc::new(found)
+}
+
+/// [`misspelled`] of one text, checked once per text.
+fn misspelled_whole(text: &str) -> Ranges {
     if text.trim().is_empty() {
         return Rc::default();
     }
@@ -168,8 +184,9 @@ pub(crate) fn misspelled(text: &str) -> Ranges {
         if let Some(found) = checked.get(&key) {
             return found.clone();
         }
-        // Typing checks a new text per key: keep the cache to the latest few hundred.
-        if checked.len() > 256 {
+        // Typing checks a new text per key: keep the cache to the latest few thousand (a long
+        // document holds one entry a paragraph).
+        if checked.len() > 4096 {
             checked.clear();
         }
         let found = Rc::new(platform::misspelled(text));

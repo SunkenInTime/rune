@@ -1,0 +1,1 @@
+- Spell checking a long multi-line field checks each paragraph once instead of the whole text on every edit, so typing in a long document no longer re-checks all of it per key.
