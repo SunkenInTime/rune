@@ -88,6 +88,8 @@ pub struct Tx {
     pub(crate) focus_visible: bool,
     /// `Tx::by_keys`.
     pub(crate) by_keys: bool,
+    /// The focused field's path and caret line as last drawn (`Tx::caret`).
+    pub(crate) caret_rect: Option<(String, [f32; 4])>,
     /// The text selection as the event arrived (`Tx::text_selection`).
     pub(crate) selection: Option<Rc<crate::TextSelection>>,
     /// `Tx::select_text`, `Tx::select_all_text` and `Tx::clear_text_selection`; the last wins.
@@ -388,6 +390,14 @@ impl Tx {
     /// put focus on the trigger before.
     pub fn by_keys(&self) -> bool {
         self.by_keys
+    }
+
+    /// The focused text field's caret line in window points `[x, y, w, h]`, as last drawn, when
+    /// that field is keyed `key` or sits inside an element keyed `key`: [`Cx::caret`](crate::Cx::caret)
+    /// for a handler or `poll`, which can scroll to it (typewriter scrolling keeps it centred).
+    /// An edit this frame moves it only once the frame has drawn.
+    pub fn caret(&self, key: &str) -> Option<[f32; 4]> {
+        crate::runtime::caret_of(&self.caret_rect, key)
     }
 
     /// The [`El::selectable`] text selection as this event arrived: the texts it covers with
