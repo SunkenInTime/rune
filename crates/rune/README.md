@@ -1578,6 +1578,14 @@ triple-clicks still select words and lines. Text with its own handlers keeps the
 The selection lives in the runtime, so selecting never re-runs the view or re-lays out the text.
 `El::selection_color` sets the highlight for selectable text and text fields alike, and both draw
 it the same way; kit's `k.selection()` is the colour its `TextInput` uses, so pass it to match.
+`El::selection_style(SelectionStyle::new(highlight).inactive(grey, ink))` paints a selection one
+way while the window is active and another while it isn't, as a browser's `::selection`.
+`.unfocused(grey, ink)` adds a third pair for a text field that doesn't have the keyboard: the
+field keeps drawing its selection while another field, a popover's field or a button has focus,
+as AppKit draws a text view's selection once it stops being first responder, in an active
+window or not. Without it an unfocused field draws no selection, as before; the selection is kept
+either way. Another window taking the keyboard deactivates this one instead, so its focused
+field shows its inactive pair.
 `Runtime::text_selection()` and `selected_text()` read the selection; `--tree` marks the text's
 node `selected` with the selected string, and scripts gain a `triple-click` event.
 
