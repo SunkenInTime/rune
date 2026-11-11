@@ -34,11 +34,22 @@ pub struct FileDialogOptions {
     pub directory: Option<PathBuf>,
     pub file_name: Option<String>,
     pub filters: Vec<(String, Vec<String>)>,
+    /// The default button's label in place of the platform's Open or Save ("Open Folder",
+    /// "Insert"): `NSSavePanel.prompt` on macOS, the portal's `accept_label` on Linux. Windows
+    /// keeps its own label.
+    pub prompt: Option<String>,
+    /// A line explaining the dialog, shown in it: `NSSavePanel.message` on macOS, in place of
+    /// the title (which a sheet doesn't show). The portal and Windows have nowhere to show it.
+    pub message: Option<String>,
 }
 impl FileDialogOptions {
     pub fn filter(mut self, name: impl Into<String>, extensions: &[&str]) -> Self {
         self.filters.push((name.into(), extensions.iter().map(|s| (*s).into()).collect())); self
     }
+    /// Sets [`FileDialogOptions::prompt`], the default button's label.
+    pub fn prompt(mut self, label: impl Into<String>) -> Self { self.prompt = Some(label.into()); self }
+    /// Sets [`FileDialogOptions::message`], the line explaining the dialog.
+    pub fn message(mut self, text: impl Into<String>) -> Self { self.message = Some(text.into()); self }
 }
 
 /// Which dialog: Open picks an existing file, Save names a file to write, Folder picks an
@@ -143,7 +154,36 @@ pub(crate) type Picked = Result<Vec<PathBuf>, FileDialogError>;
 
 #[cfg(all(feature = "native-file-dialog", any(target_os = "macos", target_os = "windows")))]
 async fn native(kind: FileDialogKind, many: bool, options: FileDialogOptions) -> Picked {
-    rfd_show(rfd_dialog(options), kind, many).await
+    #[cfg(target_os = "macos")]
+    let text = (options.prompt.clone(), options.message.clone());
+    let shown = rfd_show(rfd_dialog(options), kind, many);
+    // On the main thread rfd attached its panel to the window it chose before returning.
+    #[cfg(target_os = "macos")]
+    if let Some(mtm) = objc2_foundation::MainThreadMarker::new() {
+        let app = objc2_app_kit::NSApplication::sharedApplication(mtm);
+        // SAFETY: the main thread; rfd picks its sheet's window the same way.
+        let window = unsafe { app.mainWindow().or_else(|| app.windows().firstObject()) };
+        if let Some(window) = window { panel_text(&window, text.0.as_deref(), text.1.as_deref()); }
+    }
+    shown.await
+}
+
+/// Sets the prompt and message of the open or save panel rfd attached to `window` as a sheet:
+/// rfd has no setters for them.
+#[cfg(all(feature = "native-file-dialog", target_os = "macos"))]
+fn panel_text(window: &objc2_app_kit::NSWindow, prompt: Option<&str>, message: Option<&str>) {
+    use objc2::{class, msg_send, runtime::Bool};
+    use objc2_foundation::NSString;
+    if prompt.is_none() && message.is_none() { return; }
+    // SAFETY: the main thread; `window` is live. `attachedSheet` returns a retained window or
+    // nil, and NSSavePanel (NSOpenPanel's superclass) answers `setPrompt:` and `setMessage:`.
+    unsafe {
+        let Some(sheet) = window.attachedSheet() else { return };
+        let panel: Bool = msg_send![&*sheet, isKindOfClass: class!(NSSavePanel)];
+        if !panel.as_bool() { return; }
+        if let Some(prompt) = prompt { let _: () = msg_send![&*sheet, setPrompt: &*NSString::from_str(prompt)]; }
+        if let Some(message) = message { let _: () = msg_send![&*sheet, setMessage: &*NSString::from_str(message)]; }
+    }
 }
 #[cfg(all(feature = "native-file-dialog", any(target_os = "macos", target_os = "windows")))]
 fn rfd_dialog(options: FileDialogOptions) -> rfd::AsyncFileDialog {
@@ -264,6 +304,8 @@ impl Pending {
         let mut v = serde_json::json!({ "kind": self.kind.name(), "title": o.title, "filters": filters });
         if let Some(dir) = &o.directory { v["directory"] = dir.display().to_string().into(); }
         if let Some(name) = &o.file_name { v["fileName"] = name.clone().into(); }
+        if let Some(prompt) = &o.prompt { v["prompt"] = prompt.clone().into(); }
+        if let Some(message) = &o.message { v["message"] = message.clone().into(); }
         if self.many { v["multiple"] = true.into(); }
         v
     }
@@ -383,7 +425,11 @@ impl Presenter {
         {
             self.sheet_parent = crate::platform::macos::ns_window(window);
         }
+        #[cfg(all(feature = "native-file-dialog", target_os = "macos"))]
+        let text = (options.prompt.clone(), options.message.clone());
         self.showing = Some((id, show_over(kind, many, options, window)));
+        #[cfg(all(feature = "native-file-dialog", target_os = "macos"))]
+        if let Some(parent) = &self.sheet_parent { panel_text(parent, text.0.as_deref(), text.1.as_deref()); }
         self.answer(rt)
     }
 
@@ -429,6 +475,9 @@ fn show_over(kind: FileDialogKind, many: bool, options: FileDialogOptions, windo
 
 #[cfg(test)]
 mod multiple_tests;
+
+#[cfg(test)]
+mod options_tests;
 
 #[cfg(test)]
 mod tests {

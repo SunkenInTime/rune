@@ -597,6 +597,12 @@ app.run();
 - `Tx::set_title("Draft — Notes")` sets the window's title from a handler or `update`. The window
   opens with `AppSpec`'s title, keeps the last one set when it closes and opens again, and headless
   `--tree` output shows it as `"title"`.
+- `Tx::beep()` plays the system's alert sound, as AppKit beeps on a key or command that can't do
+  anything: `NSBeep` on macOS, `MessageBeep(MB_OK)` on Windows, and on Linux the X11 bell when
+  an X server is reachable (the desktop plays its alert sound or flashes, as the user set it),
+  else the sound theme's `bell` through `canberra-gtk-play` when it's installed, else nothing.
+  Linux plays it off the event thread. Several in one turn play once. Headless runs and tests
+  never play it: `Runtime::beeps()` counts them and `--trace` records `beep`.
 - The `Runtime` (state, scene, text, scroll offsets) belongs to the app, so a reopened window
   shows the same UI, settled on its first frame. The GPU device and renderer stay too, unless
   `release_gpu_when_closed` (then closing destroys the window and device everywhere).
@@ -1618,6 +1624,13 @@ Or ask from a handler, with no executor or waker to wire up:
   the same for a Save dialog, and `tx.open_folder` for an Open dialog that picks a folder
   (`FileDialogKind::Folder`, `"kind": "folder"` in `--tree`; filters and file name don't apply;
   the portal's `directory` chooser on Linux).
+- `FileDialogOptions::prompt("Open Folder")` labels the default button and `.message(..)` adds
+  a line explaining the dialog ("Images are copied next to the document"). macOS shows both on
+  the panel (`NSSavePanel.prompt` and `.message`; a message replaces the title, which rfd shows
+  as the message since a sheet has no title bar). The Linux portal takes the prompt as its
+  `accept_label` and has nowhere to show a message. Windows keeps its own button label and
+  shows neither: rfd doesn't reach `IFileDialog::SetOkButtonLabel`. `--tree` shows them as
+  `"prompt"` and `"message"`.
 - `tx.open_files(options, |s, result, tx| ..)` is an Open dialog that picks several files
   (Shift- and Cmd/Ctrl-click in the dialog): `result` is `Ok(paths)` with every chosen file in
   the dialog's order, an empty list when the user cancels, or the same errors as `open_file`.
@@ -2384,6 +2397,16 @@ feature (`crate::a11y`, `runtime/a11y`).
   `active_descendant` (the highlighted row of a tree, table or suggestion list whose container
   or field keeps focus). An icon-only button needs `.label("Close")`. An `El::help` tooltip
   describes its element unless it repeats the name; `description("")` turns that off.
+- **Announcements**: `tx.announce("Saved")` has screen readers read a line without moving
+  focus or drawing anything, as a status flash. It is a polite live region: a label under the
+  root that AccessKit's adapters announce when it's added (VoiceOver's announcement
+  notification, UI Automation's `LiveRegionChanged`, AT-SPI's `object:announcement`, which
+  Orca reads). Each call adds a new node, so the same text twice is read twice, and it stays
+  until the next so a reader that fetches it after the event finds it. With no reader
+  listening it does nothing, and a reader that starts later doesn't hear old ones; the web and
+  builds without `accessibility` ignore it. The last one in a turn wins. `--tree` shows it as a
+  `live-polite` label, `--trace` records `announce`, and tests read `Runtime::announcement()`.
+  For a region the view draws (a status bar a reader can also find), use `live_region` instead.
 - **Actions** run the handlers a pointer or keyboard user reaches: click presses
   (`on_press`), focus focuses, increment and decrement step (`on_step`), set value and text
   selection edit through the field's editor (so `on_input_change` runs), set value on a slider

@@ -38,6 +38,7 @@ struct Stamp {
     viewport: (u32, u32, u32),
     name: u64,
     tooltip: u64,
+    announced: u64,
 }
 
 /// An activated tree: what the platform adapter holds, to diff the next update against.
@@ -139,6 +140,7 @@ impl<S: 'static> Runtime<S> {
         tree.full = true;
         tree.stamp = None;
         name.clone_into(&mut tree.name);
+        self.a11y_forget_announcement();
     }
 
     /// Nobody listens any more: drop the tree and stop building it.
@@ -292,6 +294,7 @@ impl<S: 'static> Runtime<S> {
             viewport: (self.viewport.0.to_bits(), self.viewport.1.to_bits(), self.env.scale.to_bits()),
             name: self.window_title.current().map_or(0, hash_str),
             tooltip: self.help_tooltip().map_or(0, |(t, r)| mix(hash_str(t), r[0].to_bits() as u64 ^ (r[1].to_bits() as u64) << 32)),
+            announced: self.a11y_announce_print(),
         }
     }
 
@@ -351,7 +354,8 @@ impl<S: 'static> Runtime<S> {
         // The root: its title, size, scale and the tooltip showing.
         let tip = self.help_tooltip().map_or(0, |(t, r)| mix(hash_str(t), r.iter().fold(0, |h, v| mix(h, v.to_bits() as u64))));
         let title = self.window_title.current().map_or(0, hash_str);
-        slots[0].print = [self.viewport.0.to_bits() as u64, self.viewport.1.to_bits() as u64, self.env.scale.to_bits() as u64, tip, title]
+        let announced = self.a11y_announce_print();
+        slots[0].print = [self.viewport.0.to_bits() as u64, self.viewport.1.to_bits() as u64, self.env.scale.to_bits() as u64, tip, title, announced]
             .into_iter().fold(0, mix);
         // Each node's children and set size are part of what it shows.
         let mut kid_prints = vec![0u64; slots.len()];
@@ -385,6 +389,11 @@ impl<S: 'static> Runtime<S> {
                     node.set_bounds(rect(r, [0.0; 2]));
                     kids.push(TOOLTIP);
                     out.push((TOOLTIP, node, s.print));
+                }
+                // `Tx::announce`'s live region, after the elements so reading order is unchanged.
+                if let Some((id, node)) = self.a11y_announcement() {
+                    kids.push(id);
+                    out.push((id, node, s.print));
                 }
                 if let Some(size) = s.set_size { root.set_size_of_set(size); }
                 root.set_children(kids);

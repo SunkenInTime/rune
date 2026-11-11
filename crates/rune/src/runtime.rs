@@ -342,6 +342,8 @@ mod a11y_node;
 mod a11y_text;
 #[path = "a11y/actions.rs"]
 mod a11y_actions;
+#[path = "a11y/announce.rs"]
+mod a11y_announce;
 use a11y_actions::A11yAct;
 #[cfg(test)]
 #[path = "a11y/tests.rs"]
@@ -713,6 +715,8 @@ pub struct Runtime<S: 'static> {
     pub(crate) url_requests: Vec<String>,
     /// True when attached to a live window, overlay or web canvas, not a headless or scripted run.
     pub(crate) open_urls_natively: bool,
+    /// `Tx::beep`: how many, and whether this runtime plays them.
+    pub(crate) beeps: crate::beep::Beeps,
     /// Pop-up menus asked for (`Tx::popup_menu`) and not yet answered, oldest first.
     pub(crate) popups: popup_dispatch::Popups,
     /// The file dialog asked for (`Tx::open_file`, `Tx::save_file`) and not yet answered.
@@ -814,6 +818,8 @@ pub struct Runtime<S: 'static> {
     drags_open: usize,
     /// The accessibility tree, while an assistive client listens (`a11y/tree.rs`).
     a11y: Option<Box<a11y_tree::A11yTree>>,
+    /// `Tx::announce`'s last text, a live region in the tree.
+    announced: a11y_announce::Announced,
 }
 
 impl<S: 'static> Runtime<S> {
@@ -1014,6 +1020,7 @@ impl<S: 'static> Runtime<S> {
             minimize_request: false,
             url_requests: Vec::new(),
             open_urls_natively: false,
+            beeps: Default::default(),
             popups: Default::default(),
             file_dialog: Default::default(),
             file_dialog_answers: Vec::new(),
@@ -1071,6 +1078,7 @@ impl<S: 'static> Runtime<S> {
             drag_ends: Default::default(),
             drags_open: 0,
             a11y: None,
+            announced: Default::default(),
         }
     }
 }
