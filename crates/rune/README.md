@@ -597,6 +597,12 @@ app.run();
 - `Tx::set_title("Draft — Notes")` sets the window's title from a handler or `update`. The window
   opens with `AppSpec`'s title, keeps the last one set when it closes and opens again, and headless
   `--tree` output shows it as `"title"`.
+- `Tx::beep()` plays the system's alert sound, as AppKit beeps on a key or command that can't do
+  anything: `NSBeep` on macOS, `MessageBeep(MB_OK)` on Windows, and on Linux the X11 bell when
+  an X server is reachable (the desktop plays its alert sound or flashes, as the user set it),
+  else the sound theme's `bell` through `canberra-gtk-play` when it's installed, else nothing.
+  Linux plays it off the event thread. Several in one turn play once. Headless runs and tests
+  never play it: `Runtime::beeps()` counts them and `--trace` records `beep`.
 - The `Runtime` (state, scene, text, scroll offsets) belongs to the app, so a reopened window
   shows the same UI, settled on its first frame. The GPU device and renderer stay too, unless
   `release_gpu_when_closed` (then closing destroys the window and device everywhere).

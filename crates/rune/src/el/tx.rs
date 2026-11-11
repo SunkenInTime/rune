@@ -105,6 +105,8 @@ pub struct Tx {
     pub(crate) evict_memos: Vec<String>,
     /// `Tx::clock`.
     pub(crate) clock: f64,
+    /// `Tx::beep`.
+    pub(crate) beep: bool,
 }
 
 /// Which asked for focus: [`Tx::focus`], or [`Tx::return_focus`] handing it back.

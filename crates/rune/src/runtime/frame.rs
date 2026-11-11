@@ -172,6 +172,7 @@ impl<S: 'static> Runtime<S> {
         self.latch_playground(tx);
         for prefix in std::mem::take(&mut tx.evict_memos) { self.invalidate_memos_by_prefix(&prefix); }
         if !tx.open_urls.is_empty() { self.open_urls(std::mem::take(&mut tx.open_urls)); }
+        if std::mem::take(&mut tx.beep) { self.beep(); }
         if std::mem::take(&mut tx.clear_secret) {
             if self.copy_request.as_ref().is_some_and(crate::ClipboardWrite::is_secret) { self.copy_request = None; }
             self.clear_secret_request = true;

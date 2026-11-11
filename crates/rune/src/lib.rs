@@ -8,6 +8,7 @@ compile_error!("web does not support Rune's hot or native-file-dialog features; 
 
 mod a11y;
 mod app;
+mod beep;
 mod cold;
 mod flight;
 mod frame;

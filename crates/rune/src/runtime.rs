@@ -713,6 +713,8 @@ pub struct Runtime<S: 'static> {
     pub(crate) url_requests: Vec<String>,
     /// True when attached to a live window, overlay or web canvas, not a headless or scripted run.
     pub(crate) open_urls_natively: bool,
+    /// `Tx::beep`: how many were asked for.
+    pub(crate) beeps: crate::beep::Beeps,
     /// Pop-up menus asked for (`Tx::popup_menu`) and not yet answered, oldest first.
     pub(crate) popups: popup_dispatch::Popups,
     /// The file dialog asked for (`Tx::open_file`, `Tx::save_file`) and not yet answered.
@@ -1014,6 +1016,7 @@ impl<S: 'static> Runtime<S> {
             minimize_request: false,
             url_requests: Vec::new(),
             open_urls_natively: false,
+            beeps: Default::default(),
             popups: Default::default(),
             file_dialog: Default::default(),
             file_dialog_answers: Vec::new(),
